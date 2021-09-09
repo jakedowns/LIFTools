@@ -25,7 +25,7 @@ import java.lang.Exception
 
 
 class MainViewModel(private val app: Application): AndroidViewModel(app) {
-    val TAG: String = "LightEx"
+    val TAG: String = "LIFTools"
 
     val quadBitmapLiveData : MutableLiveData<Bitmap> by lazy {
         MutableLiveData<Bitmap>()

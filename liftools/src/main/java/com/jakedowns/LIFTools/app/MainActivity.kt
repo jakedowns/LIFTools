@@ -36,7 +36,7 @@ const val REQUEST_PICK_IMAGE_FILE = 100
 const val REQUEST_PICK_OUTPUT_DIR = 101
 
 class MainActivity : AppCompatActivity(), EventListener {
-    val TAG: String = "LightEx"
+    val TAG: String = "LIFTools"
 
     private val mainViewModel by viewModels<MainViewModel>()
     private var preview2DSurface: PreviewSurfaceView? = null
@@ -180,7 +180,7 @@ class MainActivity : AppCompatActivity(), EventListener {
     }
 
     // prompt the user to select where they want us to export files
-    // @note: just defaulting to DCIM for now
+    // @note: just defaulting to Pictures/LIFToolsExports for now
     // there's some weirdness where we'd (apparently) need to prevent them from choosing Download
     // dir or subdir, and other providers, or make sure we handle all other provider cases
     // i don't fully understand it, so i'm skipping that for now

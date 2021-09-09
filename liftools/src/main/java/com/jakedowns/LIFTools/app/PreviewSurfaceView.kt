@@ -12,7 +12,7 @@ import android.view.SurfaceView
 
 class PreviewSurfaceView: SurfaceView, SurfaceHolder.Callback {
 
-    val TAG: String = "LightEx"
+    val TAG: String = "LIFTools"
 
     constructor(context: Context, attrs: AttributeSet) : super(context, attrs) {
         setWillNotDraw(false)

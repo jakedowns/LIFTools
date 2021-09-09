@@ -17,6 +17,10 @@ files
 **TODO**
 - wigglegram export (2V,4V) (gif & mp4)
 - export 2D with bokeh baked in
+- expose option to select png or jpg, and desired quality (compression) level
+- link to open exported files
+- recently opened files list
+- ability to select export directory (defaults to /Pictures/LIFToolsExports)
 
 **I have an idea!**
 

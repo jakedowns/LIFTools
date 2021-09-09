@@ -48,7 +48,8 @@ class DiskRepository {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DCIM)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES+File
+                .separator+"LIFToolsExports")
         }
 
         var uri: Uri? = null
