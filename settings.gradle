@@ -1,0 +1,2 @@
+include ':liftools'
+rootProject.name = "LIFTools"
