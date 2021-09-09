@@ -21,6 +21,10 @@ files
 - link to open exported files
 - recently opened files list
 - ability to select export directory (defaults to /Pictures/LIFToolsExports)
+- progress bar when exporting multiple files
+  - parallize exporting multiple?
+- useful error message when there is trouble opening a file
+- app icon
 
 **I have an idea!**
 
