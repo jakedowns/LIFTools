@@ -4,99 +4,227 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#1c0d2b"
     tools:context=".MainActivity">
 
-    <LinearLayout
+    <FrameLayout
+        android:id="@+id/surface_wrapper"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:id="@+id/pb_wrapper"
-        android:weightSum="100"
-        android:orientation="vertical"
-        >
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="33"/>
-        <com.google.android.material.progressindicator.LinearProgressIndicator
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="100"
-            android:progress="50"
-            app:flow_horizontalAlign="center"
-            app:flow_verticalAlign="center" />
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="33"/>
-    </LinearLayout>
+        android:onClick="onTapSurface"
+        tools:visibility="gone">
 
-    <FrameLayout android:id="@+id/surface_wrapper"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:onClick="onTapSurface">
         <com.leiainc.androidsdk.core.QuadView
             android:id="@+id/quad_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintHorizontal_bias="1.0"
             app:layout_constraintLeft_toLeftOf="parent"
             app:layout_constraintRight_toRightOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-            android:visibility="gone"
-            app:layout_constraintVertical_bias="1.0" >
-        </com.leiainc.androidsdk.core.QuadView>
+            app:layout_constraintVertical_bias="1.0"></com.leiainc.androidsdk.core.QuadView>
 
         <com.jakedowns.LIFTools.app.PreviewSurfaceView
+            android:id="@+id/preview_2d"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:id="@+id/preview_2d"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintHorizontal_bias="1.0"
             app:layout_constraintLeft_toLeftOf="parent"
             app:layout_constraintRight_toRightOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintVertical_bias="1.0"
-            />
+            app:layout_constraintVertical_bias="1.0" />
     </FrameLayout>
 
     <FrameLayout
         android:id="@+id/intro_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        tools:visibility="invisible">
 
-        <LinearLayout android:layout_height="wrap_content"
+        <LinearLayout
             android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:orientation="vertical">
 
-            <TextView
-                android:layout_width="match_parent"
+            <com.leiainc.androidsdk.core.AntialiasingTextView
+                android:id="@+id/intro_text"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="center"
                 android:layout_margin="10dp"
-                android:gravity="top"
                 android:ellipsize="none"
+                android:gravity="center|top"
+                android:inputType="textMultiLine"
                 android:maxLines="100"
                 android:scrollHorizontally="false"
                 android:singleLine="false"
-                android:text="@string/app_description" />
+                android:text="@string/intro_text"
+                android:textAlignment="center"
+                android:textColor="@color/white"
+                android:textSize="24sp" />
+
             <Space
                 android:layout_width="match_parent"
                 android:layout_height="50dp" />
+
             <Button
                 android:id="@+id/action_open_image_picker"
+                android:layout_width="391dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/open_lightfield_image"
+                android:textSize="20sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="100dp"
+            android:orientation="vertical">
+
+            <com.leiainc.androidsdk.core.AntialiasingTextView
+                android:id="@+id/app_description"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/open_lightfield_image"
-                />
+                android:layout_gravity="bottom|center"
+                android:alpha="0.3"
+                android:ellipsize="none"
+                android:inputType="textMultiLine"
+                android:maxLines="100"
+                android:scrollHorizontally="false"
+                android:singleLine="false"
+                android:text="@string/app_description"
+                android:textColor="@color/white"
+                android:textSize="20sp" />
+
+            <com.leiainc.androidsdk.core.AntialiasingTextView
+                android:id="@+id/intro_donate_link"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|center"
+                android:alpha="0.3"
+                android:ellipsize="none"
+                android:inputType="textMultiLine"
+                android:maxLines="100"
+                android:onClick="onTapDonate"
+                android:scrollHorizontally="false"
+                android:singleLine="false"
+                android:text="@string/dontate_link"
+                android:textColor="@color/white"
+                android:textSize="20sp" />
         </LinearLayout>
     </FrameLayout>
 
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/fragment_container_view"
+        android:name="com.jakedowns.LIFTools.app.MainControlsFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:name="com.jakedowns.LIFTools.app.MainControlsFragment"
-        tools:layout="@layout/main_controls_fragment" />
+        tools:layout="@layout/main_controls_fragment"
+        tools:visibility="gone" />
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/donate_modal_fragment"
+        android:name="com.jakedowns.LIFTools.app.DonateModalFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        tools:layout="@layout/donate_modal_fragment"
+        tools:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/progress_spinner_wrapper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/progress_spinner"
+            android:visibility="visible"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_gravity="center|center_vertical"
+            android:indeterminate="true" />
+
+        <com.leiainc.androidsdk.core.AntialiasingTextView
+            android:id="@+id/loading_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center|center_vertical"
+            android:layout_marginTop="50dp"
+            android:ellipsize="none"
+            android:inputType="textMultiLine"
+            android:maxLines="100"
+            android:minHeight="48dp"
+            android:scrollHorizontally="false"
+            android:singleLine="false"
+            android:text="@string/loading_text"
+            android:textColor="#546E7A"
+            android:textSize="24sp"
+            tools:visibility="visible"
+            android:visibility="visible"/>
+
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/pb_wrapper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:weightSum="100"
+        app:flow_verticalAlign="center">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="33" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_weight="33">
+
+            <com.google.android.material.progressindicator.LinearProgressIndicator
+                android:id="@+id/progress_bar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:max="100"
+                android:progress="0"
+                android:visibility="gone"
+                app:flow_horizontalAlign="center"
+                app:flow_verticalAlign="center"
+                tools:visibility="visible" />
+
+            <com.leiainc.androidsdk.core.AntialiasingTextView
+                android:id="@+id/export_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center|center_vertical"
+                android:layout_marginTop="50dp"
+                android:ellipsize="none"
+                android:inputType="textMultiLine"
+                android:maxLines="100"
+                android:minHeight="48dp"
+                android:scrollHorizontally="false"
+                android:singleLine="false"
+                android:text="@string/exporting"
+                android:textColor="#546E7A"
+                android:textSize="24sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="33" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

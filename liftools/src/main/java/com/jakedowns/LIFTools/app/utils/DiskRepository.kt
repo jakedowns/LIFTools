@@ -42,7 +42,6 @@ class DiskRepository {
         mimeType: String = "image/png",
         format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
         quality: Int = 95
-
     ): Uri {
 
         val values = ContentValues().apply {
@@ -81,11 +80,17 @@ class DiskRepository {
         outputBitmap: Bitmap,
         context: Context
     ): Uri {
-        val file = File(
+        val folder = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "LIFToolsExports"
+        )
+        if(!folder.exists()){
+            folder.mkdirs()
+        }
+        val file = File(
+            folder,
             filename
         )
-//        val file = File(folder,"test.png")
         file.createNewFile()
         try {
             FileOutputStream(file, false).use { out ->
@@ -93,19 +98,29 @@ class DiskRepository {
                     Bitmap.CompressFormat.PNG,
                     100,
                     out
-                ) // bmp is your Bitmap instance
+                )
             }
         } catch (e: IOException) {
             e.printStackTrace()
         }
 
-        MediaScannerConnection.scanFile(
-            context,
-            arrayOf(file.absolutePath),
-            arrayOf("image/png"),
-            null
-        )
+        try {
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(file.absolutePath),
+                arrayOf("image/png"),
+                null
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
-        return FileProvider.getUriForFile(context, AUTHORITY, file)
+        var uri: Uri = Uri.fromFile(file);
+        try {
+            uri = FileProvider.getUriForFile(context, AUTHORITY, file)
+        }catch(e: Exception){
+            //e.printStackTrace()
+        }
+        return uri;
     }
 }

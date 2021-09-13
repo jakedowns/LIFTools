@@ -1,128 +1,156 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
     <FrameLayout
-        android:id="@+id/intro_layout"
+        android:id="@+id/main_controls_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <Button
-            android:id="@+id/action_pick_new_image"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|left"
-            android:onClick="onPickNewClicked"
-            android:layout_marginLeft="10dp"
-            android:layout_marginBottom="30dp"
-            android:text="@string/pick_new_image" />
-
-        <Button
-            android:id="@+id/action_export_images"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/export_images"
-            android:onClick="onExportClicked"
-            android:layout_gravity="bottom|right"
-            android:layout_marginRight="10dp"
-            android:layout_marginBottom="30dp"
-            />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:weightSum="100">
-            <TextView
-                android:layout_weight="80"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:id="@+id/debug_text_2"
-                android:text=""
-                />
-
-            <TextView
-                android:id="@+id/image_info_text"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="20"
-                android:text="Image Info..."
-                android:background="#33000000"
-                android:textAlignment="textEnd" />
-        </LinearLayout>
+        android:layout_height="match_parent"
+        app:layout_constraintEnd_toStartOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="horizontal"
             android:weightSum="100">
-        <LinearLayout android:layout_height="wrap_content"
-            android:layout_width="0dp"
-            android:layout_gravity="top"
-            android:orientation="vertical"
-            android:background="#33000000"
-            android:layout_weight="50"
-            >
-<!--            <Spinner-->
-<!--                android:id="@+id/export_type_spinner"-->
-<!--                android:layout_width="match_parent"-->
-<!--                android:layout_height="wrap_content"-->
-<!--                android:spinnerMode="dropdown"-->
-<!--                android:background="@android:drawable/btn_dropdown"-->
-<!--                />-->
-            <CheckBox
-                android:layout_width="wrap_content"
+
+            <ScrollView
+                android:layout_width="0dp"
+
+                android:layout_height="match_parent"
+                android:layout_weight="50"
+                android:fillViewport="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top"
+                    android:background="#E6000000"
+                    android:orientation="vertical">
+                    <!--            <Spinner-->
+                    <!--                android:id="@+id/export_type_spinner"-->
+                    <!--                android:layout_width="match_parent"-->
+                    <!--                android:layout_height="wrap_content"-->
+                    <!--                android:spinnerMode="dropdown"-->
+                    <!--                android:background="@android:drawable/btn_dropdown"-->
+                    <!--                />-->
+                    <CheckBox
+                        android:id="@+id/cb_PREVIEW_3D"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/toggle_preview_3d"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_4V_AI"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/export_string_4V_AI"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_4V_ST"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/export_string_4V_ST"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_ST_2x1"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/export_string_ST_2x1"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_CV_2x1"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/export_string_CV_2x1"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
+                    <CheckBox
+                        android:id="@+id/cb_disparity_maps"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/export_string_disparity_maps"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
+                    <Space
+                        android:layout_width="10dp"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+            </ScrollView>
+
+            <com.leiainc.androidsdk.core.AntialiasingTextView
+                android:id="@+id/image_info_text"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:id="@+id/cb_PREVIEW_3D"
-                android:text="@string/toggle_preview_3d"
-                android:onClick="onCheckboxClicked"
-                />
-            <CheckBox
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:id="@+id/cb_4V_AI"
-                android:text="@string/export_string_4V_AI"
-                android:onClick="onCheckboxClicked"
-                />
-            <CheckBox
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:id="@+id/cb_4V_ST"
-                android:text="@string/export_string_4V_ST"
-                android:onClick="onCheckboxClicked"
-                />
-            <CheckBox
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:id="@+id/cb_ST_2x1"
-                android:text="@string/export_string_ST_2x1"
-                android:onClick="onCheckboxClicked"
-                />
-            <CheckBox
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:id="@+id/cb_CV_2x1"
-                android:text="@string/export_string_CV_2x1"
-                android:onClick="onCheckboxClicked"
-                />
-            <CheckBox
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:id="@+id/cb_disparity_maps"
-                android:text="@string/export_string_disparity_maps"
-                android:onClick="onCheckboxClicked"
-                />
-            <Space
-                android:layout_height="wrap_content"
-                android:layout_width="10dp"
-                />
-        </LinearLayout>
-        <FrameLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="80" />
+                android:layout_weight="50"
+                android:background="#E6000000"
+                android:text="Image Info..."
+                android:textAlignment="textEnd"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
 
         </LinearLayout>
     </FrameLayout>
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_constraintEnd_toStartOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+        <LinearLayout
+            android:id="@+id/button_wrapper"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="25dp"
+            android:orientation="horizontal"
+            android:weightSum="100"
+            android:layout_gravity="bottom">
+            <Button
+                android:id="@+id/action_pick_new_image"
+                android:layout_width="0dp"
+                android:layout_weight="50"
+                android:layout_height="wrap_content"
+                android:onClick="onPickNewClicked"
+                android:layout_gravity="top"
+                android:layout_marginHorizontal="10dp"
+                android:text="@string/pick_new_image"
+                android:textSize="24sp"/>
 
+            <Button
+                android:id="@+id/action_export_images"
+                android:layout_width="0dp"
+                android:layout_weight="50"
+                android:layout_height="wrap_content"
+                android:text="@string/export_images"
+                android:onClick="onExportClicked"
+                android:layout_marginHorizontal="10dp"
+                android:textSize="24sp"
+                android:layout_gravity="top"
+                />
+        </LinearLayout>
+    </FrameLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

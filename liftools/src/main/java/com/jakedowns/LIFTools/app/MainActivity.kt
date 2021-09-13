@@ -5,6 +5,7 @@ import android.R.attr.*
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.net.Uri
@@ -26,23 +27,31 @@ import com.leiainc.androidsdk.display.LeiaSDK
 import com.jakedowns.LIFTools.app.utils.DiskRepository
 import com.jakedowns.LIFTools.app.utils.ExtraTypeCoercion.toBoolean
 import com.jakedowns.LIFTools.app.utils.ExtraTypeCoercion.toInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import org.apache.commons.io.FilenameUtils
 import java.io.File
+import com.jakedowns.LIFTools.app.MainViewModel.MapType
 
 
 // Request Codes
 const val REQUEST_PICK_IMAGE_FILE = 100
 const val REQUEST_PICK_OUTPUT_DIR = 101
 
-class MainActivity : AppCompatActivity(), EventListener {
+class MainActivity : AsyncActivity(), EventListener {
     val TAG: String = "LIFTools"
 
     private val mainViewModel by viewModels<MainViewModel>()
     private var preview2DSurface: PreviewSurfaceView? = null
+    var quadView: QuadView? = null
 
-    private var mainUIHidden = false
-    private var sawIntroScreen = false
+    var mainUIHidden = false
+    var viewingIntro = true
+    var mViewingDontateModal = false
+    var numExportsPending = 0
+    var mWaitingForFirstRenderAfterImport = false;
 
     var displayManager: LeiaDisplayManager? = null
     val IS_LEIA_DEVICE: Boolean
@@ -62,14 +71,149 @@ class MainActivity : AppCompatActivity(), EventListener {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putBoolean("viewingIntro",viewingIntro);
+        outState.putBoolean("mWaitingForFirstRenderAfterImport",mWaitingForFirstRenderAfterImport);
+        outState.putBoolean("mViewingDontateModal",mViewingDontateModal);
+        outState.putBoolean("mainUIHidden",mainUIHidden);
+
+        // NOTE: Export will be interrupted on rotate
+        // TODO: store how many, and which exactly exports we have in the queue,
+        // re-queue them on restore
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
+        viewingIntro = savedInstanceState.getBoolean("viewingIntro")
+        mViewingDontateModal = savedInstanceState.getBoolean("mViewingDontateModal")
+        mWaitingForFirstRenderAfterImport = savedInstanceState.getBoolean("mWaitingForFirstRenderAfterImport")
+        mainUIHidden = savedInstanceState.getBoolean("mainUIHidden")
+
+        updateUIViz();
+    }
+
+    override fun onBackPressed() {
+        if(mViewingDontateModal){
+            // back to intro
+            toggleDontateModalVisibility(false)
+        }else if(!viewingIntro){
+            returnToIntroView()
+        }
+    }
+
+    fun updateUIViz() {
+        updateUIViz(null);
+    }
+
+    fun updateUIViz(newConfig: Configuration?) {
+        val config = newConfig ?: resources.configuration;
+        //
+        val mainControlsWrapper: View = findViewById(R.id.fragment_container_view)
+        var mainControlsVizNext = View.GONE
+        //
+        val buttonWrapper: LinearLayout? = mainControlsWrapper.findViewById(R.id.button_wrapper)
+        var buttonWrapperVizNext = View.GONE
+        //
+        val introLayout: FrameLayout = findViewById(R.id.intro_layout)
+        var introLayoutVizNext = View.GONE
+        // spinner vis
+        val circleSpinnerWrapper = findViewById<View?>(R.id.progress_spinner_wrapper)
+        val spinnerVizNext = if(mWaitingForFirstRenderAfterImport){
+            View.VISIBLE
+        }else{
+            View.GONE
+        }
+        circleSpinnerWrapper?.visibility = spinnerVizNext
+
+        // preview surface vis
+        val preview2DSurface = findViewById<PreviewSurfaceView>(R.id.preview_2d)
+        var preivew2DVizNext = View.GONE
+
+        // loading bar vis
+        val loadingBar = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress_bar)
+        var loadingBarVizNext = View.GONE
+
+        if(viewingIntro) {
+            introLayoutVizNext = View.VISIBLE
+        }else if(mViewingDontateModal){
+            // display "donate" ui
+            toggleDontateModalVisibility(mViewingDontateModal)
+        }else if(mWaitingForFirstRenderAfterImport) {
+            // display "loading" ui
+        }else if(mainViewModel.exportsRemainingCountLiveData.value?:0 > 0) {
+            // display "exporting" ui
+            loadingBarVizNext = View.VISIBLE
+        }else{
+            // assume in "main" ui
+            mainControlsVizNext = if(!mainUIHidden){
+                View.VISIBLE
+            }else{
+                View.GONE
+            }
+            buttonWrapperVizNext = View.VISIBLE
+        }
+
+        // Toggle visibility
+        mainViewModel.redrawQuad()
+        introLayout.visibility = introLayoutVizNext
+        mainControlsWrapper.visibility = mainControlsVizNext
+        preview2DSurface?.visibility = preivew2DVizNext
+        loadingBar?.visibility = loadingBarVizNext
+        buttonWrapper?.visibility = buttonWrapperVizNext
+        val b1 = buttonWrapper?.findViewById<Button>(R.id.action_pick_new_image)
+        val b2 = buttonWrapper?.findViewById<Button>(R.id.action_export_images)
+        // check orientation of button wrapper
+        val lp1 = b1?.getLayoutParams()
+        val lp2 = b2?.getLayoutParams()
+        if(config.orientation == Configuration.ORIENTATION_LANDSCAPE){
+            buttonWrapper?.orientation = LinearLayout.HORIZONTAL
+
+            lp1?.width = 0
+            lp1?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+
+            lp2?.width = 0
+            lp2?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+        }else{
+            buttonWrapper?.orientation = LinearLayout.VERTICAL
+
+            lp1?.width = LinearLayout.LayoutParams.MATCH_PARENT
+            lp1?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+
+            lp2?.width = LinearLayout.LayoutParams.MATCH_PARENT
+            lp2?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+        }
+        b1?.layoutParams = lp1
+        b2?.layoutParams = lp2
+
+        // TODO: we could make this smarter and pipe only 2 of the views into the network
+        // to get disparity back out, but for now, just hide the option when 4 views
+        contextualizeDepthMapOption()
+    }
+
+    fun contextualizeDepthMapOption() {
+        val mainControlsWrapper: View = findViewById(R.id.fragment_container_view)
+        val cbDisparityMaps = mainControlsWrapper.findViewById<CheckBox?>(R.id.cb_disparity_maps)
+        val depthMapOptionVizNext = if(mainViewModel.multiviewImage?.viewPoints?.size == 4){
+            View.GONE
+        }else{
+            View.VISIBLE
+        }
+        cbDisparityMaps?.visibility = depthMapOptionVizNext;
+
+        // disable cbDisparityMaps in prefs
+        if(depthMapOptionVizNext == View.GONE){
+            val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
+                .user_prefs_key),Context
+                .MODE_PRIVATE)
+            with (sharedPref?.edit()) {
+                val prefNameDEPTHMAP = resources.getString(R.string.export_opt_cb_disparity_maps_key)
+                this?.putInt(prefNameDEPTHMAP, 0)
+                this?.apply()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super<AppCompatActivity>.onCreate(savedInstanceState)
+        super<AsyncActivity>.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         displayManager = LeiaSDK.getDisplayManager(applicationContext)
@@ -80,7 +224,9 @@ class MainActivity : AppCompatActivity(), EventListener {
 
 //        val mainControlsFragment: Fragment? = supportFragmentManager.findFragmentById(R.id
 //            .fragment_container_view);
-        val mainControlsWrapper: View = requireViewById(R.id.fragment_container_view)
+        val mainControlsWrapper: View = findViewById(R.id.fragment_container_view)
+//        val buttonWrapper: LinearLayout? = mainControlsWrapper.findViewById(R.id.button_wrapper)
+
         mainControlsWrapper.visibility = View.GONE
 
         preview2DSurface = findViewById<PreviewSurfaceView>(R.id.preview_2d)
@@ -96,23 +242,21 @@ class MainActivity : AppCompatActivity(), EventListener {
         val button: Button = findViewById(R.id.action_open_image_picker)
         button.setOnClickListener(View.OnClickListener {
             showFilePicker()
-            sawIntroScreen = true // track that we've moved past first "screen" so that on
-        // rotation we show the proper ui
         })
 
         mainViewModel.mainActivity = this
         mainViewModel.preview2DSurface = preview2DSurface;
 
         /*  Get reference to QuadView */
-        val quadView: QuadView = findViewById(R.id.quad_view)
+        quadView = findViewById<QuadView>(R.id.quad_view)
 
         /*  Set scale type to Fit center  */
-        quadView.scaleType = ScaleType.FIT_CENTER
+        quadView?.scaleType = ScaleType.FIT_CENTER
 
         val quadBitmapObserver = Observer<Bitmap> { quadBitmap ->
             // Observe LiveData to update UI when Quad Bitmap is available.
             if (quadBitmap != null) {
-                quadView.setQuadBitmap(quadBitmap)
+                quadView?.setQuadBitmap(quadBitmap)
             } else {
                 Toast.makeText(this, "Failed to retrieve Image", Toast.LENGTH_LONG).show()
             }
@@ -121,14 +265,48 @@ class MainActivity : AppCompatActivity(), EventListener {
         mainViewModel.quadBitmapLiveData.observe(this, quadBitmapObserver)
 
         mainViewModel.parsedFileCountLiveData.observe(this, parsedFileCountObserver)
+
+        mainViewModel.exportsRemainingCountLiveData.observe(this, exportProgressObserver)
+
+        findViewById<View?>(R.id.app_description)?.setOnClickListener {
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://twitter.com/jakedowns"))
+            startActivity(browserIntent)
+        }
+
+        updateUIViz()
+    }
+
+    private val exportProgressObserver = Observer<Int> {
+        val bar = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress_bar)
+        val textView = findViewById<com.leiainc.androidsdk.core.AntialiasingTextView>(R.id.export_text)
+        if(it==-1){
+            numExportsPending = 0
+            // hide progress bar and show controls again
+            val mainControlsWrapper: View? = findViewById(R.id.fragment_container_view)
+            mainControlsWrapper?.visibility = View.VISIBLE
+            bar?.visibility = View.GONE
+            textView?.visibility = View.GONE
+//            quadView?.visibility = View.VISIBLE
+//            preview2DSurface?.visibility = View.VISIBLE
+            mainViewModel.redrawQuad()
+        }else if(numExportsPending > 0){
+            bar?.progress = numExportsPending - it
+            textView?.visibility = View.VISIBLE
+            textView?.text = "exporting (${numExportsPending - it + 1}/$numExportsPending)\n(this may take a minute. don't rotate device or leave app)"
+        }
     }
 
     /*
         Once this value increments, we know the file is loaded & decoded successfully
      */
     private val parsedFileCountObserver = Observer<Int> { _ ->
+        if(mainViewModel.multiviewImage?.viewPoints?.size === 1){
+            Toast.makeText(this, "", Toast.LENGTH_LONG).show()
+        }
         mainViewModel.redrawQuad()
-        checkToggle3D()
+        checkToggle3D(true)
+        mWaitingForFirstRenderAfterImport = false
+        updateUIViz()
     }
 
     fun setCheckboxStateFromSavedPrefs(): Boolean{
@@ -144,24 +322,34 @@ class MainActivity : AppCompatActivity(), EventListener {
         val prefNameCurrentFilename = res.getString(R.string.pref_string_state_selected_filename)
 //        val prefNameCurrentFilepath = res.getString(R.string.pref_string_state_selected_filepath)
 
-        val EXPORT_4V_ST = sharedPref.getInt(prefName4VST,0).toBoolean()
-        val EXPORT_DISPARITY_MAPS = sharedPref.getInt(prefNameDEPTHMAP,0).toBoolean()
-        val EXPORT_ST_CROSSVIEW = sharedPref.getInt(prefNameSTCV,0).toBoolean()
-        val PREVIEW_3D = sharedPref.getInt(prefNamePREVIEW3D,1).toBoolean()
+        val export4VST = sharedPref.getInt(prefName4VST,0).toBoolean()
+        val exportDisparityMaps = sharedPref.getInt(prefNameDEPTHMAP,0).toBoolean()
+        val exportSTCV = sharedPref.getInt(prefNameSTCV,0).toBoolean()
+        val preview3D = sharedPref.getInt(prefNamePREVIEW3D,1).toBoolean()
 
-        Log.i(TAG,"$EXPORT_4V_ST $EXPORT_DISPARITY_MAPS $EXPORT_ST_CROSSVIEW $PREVIEW_3D")
+        Log.i(TAG,"$export4VST $exportDisparityMaps $exportSTCV $preview3D")
 
-        val fragment = requireViewById<View>(R.id.fragment_container_view)
-        fragment.findViewById<CheckBox?>(R.id.cb_4V_ST)?.isChecked = EXPORT_4V_ST
-        fragment.findViewById<CheckBox?>(R.id.cb_disparity_maps)?.isChecked = EXPORT_DISPARITY_MAPS
-        fragment.findViewById<CheckBox?>(R.id.cb_CV_2x1)?.isChecked = EXPORT_ST_CROSSVIEW
-        fragment.findViewById<CheckBox?>(R.id.cb_PREVIEW_3D)?.isChecked = PREVIEW_3D
+        val fragment = findViewById<View>(R.id.fragment_container_view)
+        if(fragment != null) {
+            fragment.findViewById<CheckBox>(R.id.cb_4V_ST)?.isChecked = export4VST
+            fragment.findViewById<CheckBox>(R.id.cb_disparity_maps)?.isChecked = exportDisparityMaps
+            fragment.findViewById<CheckBox>(R.id.cb_CV_2x1)?.isChecked = exportSTCV
+            fragment.findViewById<CheckBox>(R.id.cb_PREVIEW_3D)?.isChecked = preview3D
+        }
 
         return true
     }
 
     // prompt the user to select an image
     fun showFilePicker() {
+        val circleSpinnerWrapper = findViewById<View?>(R.id.progress_spinner_wrapper)
+        circleSpinnerWrapper?.visibility = View.VISIBLE
+
+        val preview2DSurface = findViewById<PreviewSurfaceView>(R.id.preview_2d)
+        preview2DSurface?.visibility = View.GONE
+
+        quadView?.visibility = View.GONE
+
         val pickerInitialUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -176,66 +364,31 @@ class MainActivity : AppCompatActivity(), EventListener {
             putExtra(DocumentsContract.EXTRA_INITIAL_URI, pickerInitialUri)
         }
 
-        startActivityForResult(intent, REQUEST_PICK_IMAGE_FILE)
-    }
-
-    // prompt the user to select where they want us to export files
-    // @note: just defaulting to Pictures/LIFToolsExports for now
-    // there's some weirdness where we'd (apparently) need to prevent them from choosing Download
-    // dir or subdir, and other providers, or make sure we handle all other provider cases
-    // i don't fully understand it, so i'm skipping that for now
-//    fun showOutputDirectoryPicker() {
-//        val pickerInitialUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-//        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-////            addCategory(Intent.CATEGORY_OPENABLE)
-////            type = DocumentsContract.Document.MIME_TYPE_DIR;
-//            putExtra(DocumentsContract.EXTRA_INITIAL_URI, pickerInitialUri)
-//        }
-//
-//        startActivityForResult(intent, REQUEST_PICK_OUTPUT_DIR)
-//    }
-
-    //unused for now
-//    fun makeSpinner(){
-//        //get the spinner from the xml.
-//
-//        //get the spinner from the xml.
-////            val dropdown = findViewById<Spinner>(R.id.export_type_spinner)
-////            //create a list of items for the spinner.
-////            val items = arrayOf(
-////                "2",
-////                "2",
-////                "three"
-////            )
-////            //create an adapter to describe how the items are displayed, adapters are used in several places in android.
-////            //There are multiple variations of this, but this is the basic variant.
-////            val adapter = ArrayAdapter(this, R.layout.spinner_row, items)
-////            //set the spinners adapter to the previously created one.
-////            dropdown.adapter = adapter
-//    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
-        super.onActivityResult(requestCode, resultCode, resultData)
-
-        when(requestCode){
-            REQUEST_PICK_IMAGE_FILE -> {
-                val intro_layout: FrameLayout = findViewById(R.id.intro_layout)
-                intro_layout.visibility = View.GONE
-
+        // Original Sync Version:
+        //startActivityForResult(intent, REQUEST_PICK_IMAGE_FILE)
+        // NEW Async Version:
+        GlobalScope.launch(Dispatchers.Main) {
+            val result = launchIntent(intent).await()
+            result?.data?.let {
+                val introLayout: FrameLayout = findViewById(R.id.intro_layout)
                 val mainControlsWrapper: View? = findViewById(R.id.fragment_container_view)
-                mainControlsWrapper?.visibility = View.VISIBLE
 
                 setCheckboxStateFromSavedPrefs()
 
                 mainControlsWrapper?.findViewById<CheckBox>(R.id.cb_PREVIEW_3D)?.visibility =
                     when (IS_LEIA_DEVICE){
-                    true -> View.VISIBLE
-                    else -> View.GONE
-                }
+                        true -> View.VISIBLE
+                        else -> View.GONE
+                    }
 
-
-                if (resultCode == Activity.RESULT_OK) {
-                    resultData?.data?.also { fileUri ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    viewingIntro = false
+                    mWaitingForFirstRenderAfterImport = true
+                    runOnUiThread {
+                        introLayout.visibility = View.GONE
+                        circleSpinnerWrapper?.visibility = View.VISIBLE
+                    }
+                    it.data?.also { fileUri ->
 
                         /**
                          * Upon getting a document uri returned, we can use
@@ -285,7 +438,7 @@ class MainActivity : AppCompatActivity(), EventListener {
 
                         val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
                             .user_prefs_key),Context
-                            .MODE_PRIVATE) ?: return
+                            .MODE_PRIVATE) ?: return@also
 
                         with (sharedPref.edit()) {
                             putString(resources.getString(R.string
@@ -298,12 +451,65 @@ class MainActivity : AppCompatActivity(), EventListener {
 
                         mSelectedFilename = displayName
 
-                        // TODO offer to re-open recently opened files
-
                         mainViewModel.openSelectedFile(fileUri)
                     }
+                }else{
+                    onErrorLoadingFromFile()
                 }
             }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        if(hasFocus) {
+            checkToggle3D(true)
+        }else{
+            checkToggle3D(false)
+        }
+    }
+
+    // prompt the user to select where they want us to export files
+    // @note: just defaulting to Pictures/LIFToolsExports for now
+    // there's some weirdness where we'd (apparently) need to prevent them from choosing Download
+    // dir or subdir, and other providers, or make sure we handle all other provider cases
+    // i don't fully understand it, so i'm skipping that for now
+//    fun showOutputDirectoryPicker() {
+//        val pickerInitialUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+//        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+////            addCategory(Intent.CATEGORY_OPENABLE)
+////            type = DocumentsContract.Document.MIME_TYPE_DIR;
+//            putExtra(DocumentsContract.EXTRA_INITIAL_URI, pickerInitialUri)
+//        }
+//
+//        startActivityForResult(intent, REQUEST_PICK_OUTPUT_DIR)
+//    }
+
+    //unused for now
+//    fun makeSpinner(){
+//        //get the spinner from the xml.
+//
+//        //get the spinner from the xml.
+////            val dropdown = findViewById<Spinner>(R.id.export_type_spinner)
+////            //create a list of items for the spinner.
+////            val items = arrayOf(
+////                "2",
+////                "2",
+////                "three"
+////            )
+////            //create an adapter to describe how the items are displayed, adapters are used in several places in android.
+////            //There are multiple variations of this, but this is the basic variant.
+////            val adapter = ArrayAdapter(this, R.layout.spinner_row, items)
+////            //set the spinners adapter to the previously created one.
+////            dropdown.adapter = adapter
+//    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
+        super.onActivityResult(requestCode, resultCode, resultData)
+
+        when(requestCode){
+//            REQUEST_PICK_IMAGE_FILE -> {
+//
+//            }
             // unused for now
 //            REQUEST_PICK_OUTPUT_DIR -> {
 //                if (resultCode == Activity.RESULT_OK) {
@@ -336,6 +542,29 @@ class MainActivity : AppCompatActivity(), EventListener {
 
     }
 
+    fun onErrorLoadingFromFile(){
+        mWaitingForFirstRenderAfterImport = false;
+        // return to "intro" screen
+        returnToIntroView()
+        Toast.makeText(this, "Error opening selected file.", Toast.LENGTH_LONG).show()
+    }
+
+    fun returnToIntroView(){
+        viewingIntro = true
+        val introLayout: FrameLayout = findViewById(R.id.intro_layout)
+        val mainControlsWrapper: View? = findViewById(R.id.fragment_container_view)
+        val bar = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress_bar)
+        bar?.visibility = View.GONE
+        findViewById<View?>(R.id.progress_spinner_wrapper)?.visibility = View.GONE
+
+        preview2DSurface?.visibility = View.GONE
+        quadView?.visibility = View.GONE
+
+        mainControlsWrapper?.visibility = View.GONE
+
+        introLayout.visibility = View.VISIBLE
+    }
+
     private fun getStringResourceByName(context: Context,  resourceName: String): String? {
         try {
             val packageName = packageName
@@ -346,6 +575,12 @@ class MainActivity : AppCompatActivity(), EventListener {
             Log.e("Error", ex.message.toString())
         }
         return null
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration){
+        super.onConfigurationChanged(newConfig)
+
+        updateUIViz(newConfig)
     }
 
     override fun onCheckboxClicked(view: View) {
@@ -362,18 +597,18 @@ class MainActivity : AppCompatActivity(), EventListener {
             apply()
             mainViewModel.redrawQuad()
             if(id == "cb_PREVIEW_3D"){
-                checkToggle3D()
+                checkToggle3D(true)
             }
         }
     }
 
-    fun checkToggle3D(){
+    fun checkToggle3D(desiredState: Boolean) {
         val cpm = mainViewModel.currentPreviewMode?:MainViewModel.PreviewMode.MODE_2V
         val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
             .user_prefs_key),Context
             .MODE_PRIVATE) ?: return
         val prefName = resources.getString(R.string.export_opt_cb_PREVIEW_3D_key)
-        val enable3d = sharedPref.getInt(prefName,1).toBoolean()
+        val enable3d = !viewingIntro && desiredState && sharedPref.getInt(prefName,1).toBoolean()
         if(
             enable3d
         ){
@@ -382,13 +617,13 @@ class MainActivity : AppCompatActivity(), EventListener {
                 || cpm == MainViewModel.PreviewMode.MODE_4V
             ){
                 preview2DSurface?.visibility = View.GONE
-                requireViewById<QuadView>(R.id.quad_view).visibility = View.VISIBLE
+                findViewById<QuadView>(R.id.quad_view).visibility = View.VISIBLE
             }
 //                Toast.makeText(this, "requesting 3d mode", Toast.LENGTH_LONG).show()
             displayManager?.requestBacklightMode(LeiaDisplayManager.BacklightMode.MODE_3D)
         }else{
             preview2DSurface?.visibility = View.VISIBLE
-            requireViewById<QuadView>(R.id.quad_view).visibility = View.GONE
+            findViewById<QuadView>(R.id.quad_view).visibility = View.GONE
 //                Toast.makeText(this, "requesting 2d mode", Toast.LENGTH_LONG).show()
             displayManager?.requestBacklightMode(LeiaDisplayManager.BacklightMode.MODE_2D)
         }
@@ -413,6 +648,35 @@ class MainActivity : AppCompatActivity(), EventListener {
         finalizeExportAfterDirectorySelected()
     }
 
+    fun onTapDonate(view: View){
+        toggleDontateModalVisibility(true);
+    }
+    fun onTapDonateHide(view: View){
+        toggleDontateModalVisibility(false);
+    }
+
+    fun toggleDontateModalVisibility(visible: Boolean) {
+        mViewingDontateModal = visible;
+        findViewById<View?>(R.id.donate_modal_fragment)?.visibility = when(visible) {
+            true -> View.VISIBLE
+            false -> View.GONE
+        }
+        if(visible){
+            val donateModalFragment = findViewById<View?>(R.id.donate_modal_fragment)
+            val donateTable = donateModalFragment?.findViewById<TableLayout>(R.id.donate_table)
+            val venmoRow = donateTable?.findViewById<TableRow?>(R.id.venmo_row)
+            venmoRow?.setOnClickListener {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://venmo.com/jacobdowns3"))
+                startActivity(browserIntent)
+            }
+            val paypalRow = donateTable?.findViewById<TableRow?>(R.id.paypal_row)
+            paypalRow?.setOnClickListener {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://paypal.me/fallaciousimpala"))
+                startActivity(browserIntent)
+            }
+        }
+    }
+
     fun finalizeExportAfterDirectorySelected() {
 //        if(mOutputUri == null){
 //            return;
@@ -422,65 +686,72 @@ class MainActivity : AppCompatActivity(), EventListener {
         // loop and generate bitmaps
         // save bitmaps to storage
         val ms = System.currentTimeMillis();
-
-        // array of Ints
-//        var selectedModesArray = ExportOptionsModel.getSelectedExportOptionsArray(application)
-        var selectedOptions = ExportOptionsModel.getSelectedExportOptionsObjectForApp(application)
+        val selectedOptions = ExportOptionsModel.getSelectedExportOptionsObjectForApp(application)
 
         val filename_base = FilenameUtils.removeExtension(mSelectedFilename ?: "") + "_$ms"
 
-//        for(i in selectedModesArray) {
-//            if(selectedModesArray[i] == 1){
-//                val suffix = when(i) {
-//                    0 -> "2x1"
-//                    1 -> "2x1"
-//                    2 -> "2x2"
-//                    3 -> "2x2"
-//                    else -> "2x1"
-//                }
-//            }
-//        }
-
-        // todo: progress bar
-        var numExporting = 0
+        numExportsPending = 0
+        val exportModeList = ArrayList<Triple<MainViewModel.PreviewMode,MainViewModel.MapType,String>>()
 
         // instead of getting fancy, let's hard code, then refactor later
         for(i in 0..3) {
-            var filename = filename_base
+            var filename = filename_base.replace("_2x2","").replace("_2x1","")
             var mode = MainViewModel.PreviewMode.MODE_2V
+            var suffix = "ST_2x1";
             when(i){
                 0 -> if(selectedOptions.EXPORT_ST) {
-                    filename += "_ST_2x1.png"
+                    // same as defaults
+                    mode = MainViewModel.PreviewMode.MODE_2V
+                    suffix = "ST_2x1"
                 } else { continue }
                 1 -> if(selectedOptions.EXPORT_ST_CROSSVIEW) {
-                    filename += "_ST_CROSSVIEW_2x1.png"
                     mode = MainViewModel.PreviewMode.MODE_ST_CROSSVIEW
+                    suffix = "ST_CROSSVIEW";
                 } else { continue }
                 2 -> if(selectedOptions.EXPORT_4V) {
-                    filename += "_4V_2x2.png"
                     mode = MainViewModel.PreviewMode.MODE_4V
+                    suffix = "4V_2x2";
                 } else { continue }
                 3 -> if(selectedOptions.EXPORT_4V_ST) {
-                    filename += "_4V_ST_2x2.png"
                     mode = MainViewModel.PreviewMode.MODE_4V_ST
+                    suffix = "4V_ST_2x2";
                 } else { continue }
                 else -> continue
             }
-
-            val outputBitmap = mainViewModel.generateBitmap("ALBEDO",mode)
-            saveBitmap(outputBitmap,filename)
-
-            // todo reflow so it's easier to tag albedo v. depth
-//            if(selectedOptions.EXPORT_DISPARITY_MAPS){
-//                val outputBitmap2 = mainViewModel.generateBitmap("DISPARITY",mode)
-//                saveBitmap(outputBitmap2,filename)
-//            }
+            numExportsPending++
+            exportModeList.add(Triple(mode,MapType.MAP_ALBEDO,"${filename}_${suffix}.png"))
+            if(selectedOptions.EXPORT_DISPARITY_MAPS){
+                numExportsPending++
+                exportModeList.add(Triple(mode,MapType.MAP_DISPARITY,"${filename}_${suffix}_depth.png"))
+            }
         }
+
+        // disable button if no modes selected
+        // or throw visible error here
+        if(exportModeList.size == 0) {
+            return;
+        }
+
+        // hide controls and show progress bar
+        val mainControlsWrapper: View? = findViewById(R.id.fragment_container_view)
+        mainControlsWrapper?.visibility = View.GONE
+        mainControlsWrapper?.invalidate()
+        val bar = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress_bar)
+        bar?.visibility = View.VISIBLE
+        bar?.max = exportModeList.size
+        quadView?.visibility = View.GONE
+        preview2DSurface?.visibility = View.GONE
+        // jog for redraw
+//        val mainView = window.decorView.findViewById<View>(android.R.id.content)
+//        mainView?.visibility = View.GONE
+//        mainView?.visibility = View.VISIBLE
+//        mainView?.invalidate()
+        mainViewModel.exportBatch(exportModeList)
     }
 
-    fun saveBitmap(outputBitmap: Bitmap?, filename: String) {
+    fun saveBitmap(outputBitmap: Bitmap?, filename: String): Pair<Boolean,String> {
         if(outputBitmap == null){
-            Log.e(TAG,"error exporting $filename")
+            return Pair(false,"error exporting $filename outputBitmap missing")
         }else{
             //TODO: accept options for: mimetype,
             // pass thru old metadata
@@ -491,19 +762,20 @@ class MainActivity : AppCompatActivity(), EventListener {
                     outputBitmap,
                     this
                 )
-                Toast.makeText(this, "Image Saved: ${finalOutputUri?.path}!", Toast.LENGTH_LONG)
-                    .show()
+                // ${finalOutputUri?.path}
+                return Pair(true,"Image Saved to /Pictures/LIFToolsExports")
             }catch(ex: Exception){
-                Toast.makeText(this, "Error Exporting", Toast
-                    .LENGTH_LONG)
-                    .show()
                 Log.e(TAG, ex.message, ex)
+                return Pair(false,"error exporting $filename ${ex.message}")
             }
+//            finally{
+//                //
+//            }
         }
     }
 
     fun onTapSurface(view: View) {
-        if(!sawIntroScreen){
+        if(viewingIntro || numExportsPending > 0){
             return
         }
         mainUIHidden = !mainUIHidden
@@ -512,8 +784,8 @@ class MainActivity : AppCompatActivity(), EventListener {
         }else{
             View.VISIBLE
         }
-        requireViewById<View>(R.id.image_info_text).visibility = visNext
-        requireViewById<View>(R.id.fragment_container_view).visibility = visNext
+        findViewById<View>(R.id.image_info_text).visibility = visNext
+        findViewById<View>(R.id.fragment_container_view).visibility = visNext
     }
 
     override fun onPause() {

@@ -25,6 +25,10 @@ files
   - parallize exporting multiple?
 - useful error message when there is trouble opening a file
 - app icon
+- ability to specify filename
+- ability to pinch zoom / pan preview
+- ability to extract 2v or 4v from video by selecting left / right frame manually, and adjusting alignment for proper disparity
+- ability to crop? (maybe beyond scope, not trying to re-invent LeiaPlayer)
 
 **I have an idea!**
 

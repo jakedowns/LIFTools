@@ -20,8 +20,11 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import java.io.File
 import android.graphics.BitmapFactory
+import android.view.View
 import java.io.ByteArrayOutputStream
 import java.lang.Exception
+import android.widget.Toast
+import com.leiainc.androidsdk.photoformat.MultiviewFileType
 
 
 class MainViewModel(private val app: Application): AndroidViewModel(app) {
@@ -35,12 +38,21 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         MutableLiveData<Int>(0)
     }
 
+    val exportsRemainingCountLiveData : MutableLiveData<Int> by lazy {
+        MutableLiveData<Int>(0)
+    }
+
     enum class PreviewMode {
         MODE_2V,
         MODE_4V_ST,
         MODE_4V,
         MODE_ST_CROSSVIEW,
         MODE_4V_2D
+    }
+
+    enum class MapType {
+        MAP_ALBEDO,
+        MAP_DISPARITY
     }
 
     var multiviewImage: MultiviewImage? = null
@@ -50,6 +62,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
     var currentPreviewMode: PreviewMode? = null
     var mCurrentFilepath: String? = null
     var mCurrentFilename: String? = null
+    var mCurrentFileType: MultiviewFileType? = null
     var mCurrentImageIsStacked: Boolean = false
 
     init {
@@ -86,8 +99,33 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //        loadLFImageFromUri(fileUri!!)
 //    }
 
+    fun exportBatch(exportModeList: ArrayList<Triple<PreviewMode, MapType, String>>) = viewModelScope.launch(Dispatchers.IO) {
+        exportsRemainingCountLiveData.postValue(exportModeList.size)
+        for (i in 0 until exportModeList.size) {
+            val (mode,map_type,filename) = exportModeList[i]
+//            val type = when(map_type){
+//                MapType.MAP_ALBEDO -> "ALBEDO"
+//                MapType.MAP_DISPARITY -> "DISPARITY"
+//            }
+            val outputBitmap = generateBitmap(map_type,mode)
+            if(mainActivity!=null){
+                val (savedSuccessfully,message) = mainActivity!!.saveBitmap(outputBitmap,filename)
+                mainActivity!!.runOnUiThread(Runnable { Toast.makeText(mainActivity, message, Toast.LENGTH_SHORT).show() })
+            }
+            val next = if(exportsRemainingCountLiveData.value?:0 <= 1){
+                -1
+            }else{
+                exportsRemainingCountLiveData.value?.minus(1)?:-1
+            }
+            exportsRemainingCountLiveData.postValue(next)
+        }
+        return@launch
+    }
+
     private fun loadLFImageFromUri(fileUri: Uri) = viewModelScope.launch(Dispatchers.IO) {
         val context = app.applicationContext
+        multiviewImage = null; // clear out old one if any
+        mCurrentFileType = null;
 
         /* This function searches for the Uri of the file name stored on the internal storage as 'farm-lif.jpg'. */
 //        val fileInputStream = context.resources.openRawResource(R.raw.apollo_low_contrast_2x1)
@@ -106,23 +144,31 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //            }
 //        }
 
-        if (fileUri != null) {
-            dimensions.inJustDecodeBounds = true
-            val pfd: ParcelFileDescriptor? = context.contentResolver.openFileDescriptor(fileUri, "r")
-            val mBitmap = BitmapFactory.decodeFileDescriptor(pfd?.fileDescriptor,null,dimensions);
+        dimensions.inJustDecodeBounds = true
+        val pfd: ParcelFileDescriptor? = context.contentResolver.openFileDescriptor(fileUri, "r")
+        BitmapFactory.decodeFileDescriptor(pfd?.fileDescriptor,null,dimensions);
 
 //            Log.i(TAG,dimensions.outWidth.toString()+" "+dimensions.outHeight.toString())
-            val tempMultiviewImage = MultiviewImageDecoder.getDefault().decode(context, fileUri,
-                dimensions.outWidth * dimensions.outHeight)
-            /*  Decoder returns null if */
-            if (tempMultiviewImage != null) {
-                multiviewImage = tempMultiviewImage
-                // cant redraw quad from this thread
-                // post a message to the main activity and ask it to do it
-                val nextValue = parsedFileCountLiveData.value?.plus(1)?:0
-                parsedFileCountLiveData.postValue(nextValue)
-                return@launch
-            }
+        val tempMultiviewImage = MultiviewImageDecoder.getDefault().decode(
+            context,
+            fileUri,
+            dimensions.outWidth * dimensions.outHeight)
+        /*  Decoder returns null if */
+        if (tempMultiviewImage != null) {
+            multiviewImage = tempMultiviewImage
+
+            val decoder = MultiviewImageDecoder.getDefault()
+
+            // TODO: store decoded filetype
+            val fileType = decoder.getFileType(context, fileUri)
+            mCurrentFileType = fileType
+            //Log.i(TAG,"MultiviewImageDecoder "+fileType)
+
+            // cant redraw quad from this thread
+            // post a message to the main activity and ask it to do it
+            val nextValue = parsedFileCountLiveData.value?.plus(1)?:0
+            parsedFileCountLiveData.postValue(nextValue)
+            return@launch
         }
 
 //                val d3 = (multiviewImage.viewPoints[2]).disparity;
@@ -133,9 +179,10 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //                quadBitmapLiveData.postValue(d1);
 
         quadBitmapLiveData.postValue(null)
+        mainActivity?.onErrorLoadingFromFile()
     }
 
-    fun generateBitmap(type: String, mode: PreviewMode): Bitmap? {
+    fun generateBitmap(type: MapType, mode: PreviewMode): Bitmap? {
         var comboBitmap: Bitmap? = null
         val comboImage: Canvas
 
@@ -147,15 +194,40 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         val dFarLeft: Bitmap?
         val dFarRight: Bitmap?
 
+        val use1VMode = multiviewImage?.viewPoints?.size == 1
+
         val vp0 = multiviewImage?.viewPoints?.getOrNull(0)
         val vp1 = multiviewImage?.viewPoints?.getOrNull(1)
         val vp2 = multiviewImage?.viewPoints?.getOrNull(2)
         val vp3 = multiviewImage?.viewPoints?.getOrNull(3)
 
+        val synthesizer2: MultiviewSynthesizer2? = if(mainActivity?.IS_LEIA_DEVICE == true){
+            MultiviewSynthesizer2.createMultiviewSynthesizer(app.applicationContext)
+        }else{
+            null
+        }
+        try{
+            synthesizer2?.populateDisparityMaps(multiviewImage)
+        }catch(e: Exception){
+            e.printStackTrace()
+        }
+        try{
+            val useSynthesizer2 = (mode === PreviewMode.MODE_4V || use1VMode) && type === MapType.MAP_ALBEDO
+            if(useSynthesizer2) {
+                val quadBitmap = synthesizer2?.toQuadBitmap(multiviewImage)
+                return quadBitmap
+            }
+        }catch(e: Exception){
+            e.printStackTrace()
+        }
+
+        // TODO: if 1V mode detected, split image out of synthesized quadview
+//        synthesizer2?.toTiledBitmap()
+
         when(mode){
             PreviewMode.MODE_4V -> {
                 // real 4v
-                if(type === "DISPARITY"){
+                if(type === MapType.MAP_DISPARITY){
                     dFarLeft = vp0?.disparity
                     dLeft = vp1?.disparity
                     dRight = vp2?.disparity
@@ -193,7 +265,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
                 }
             }
             PreviewMode.MODE_4V_ST -> {
-                if(type === "DISPARITY"){
+                if(type === MapType.MAP_DISPARITY){
                     dLeft = vp0?.disparity
                     dRight = vp1?.disparity
                 }else{
@@ -237,7 +309,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
             }
             else -> {
                 // 2V 2x1 SBS
-                if(type === "DISPARITY"){
+                if(type === MapType.MAP_DISPARITY){
                     dLeft = vp0?.disparity
                     dRight = vp1?.disparity
                 }else{
@@ -279,6 +351,16 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
             Log.i(TAG,"redrawQuad: mvi not found")
             return
         }
+        if(mainActivity != null){
+            if(
+                mainActivity?.viewingIntro == true
+                || mainActivity?.mViewingDontateModal?:false
+                || exportsRemainingCountLiveData.value?:0 > 0
+                || mainActivity?.mWaitingForFirstRenderAfterImport?:false
+            ){
+                return
+            }
+        }
         val context = app.applicationContext
 //        Log.w(TAG,"how many viewpoints? "+multiviewImage?.viewPoints?.size);
 
@@ -290,7 +372,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         try {
             synthesizer2?.populateDisparityMaps(multiviewImage)
         }catch(ex: Exception){
-
+            Log.i(TAG,ex.message?:"error")
         }
 
 
@@ -299,6 +381,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
                 .user_prefs_key),Context.MODE_PRIVATE) ?: return
 
         val res = app.applicationContext.resources;
+        val prefName4VAI = res.getString(R.string.export_opt_cb_4V_AI_key)
         val prefName4VST = res.getString(R.string.export_opt_cb_4V_ST_key)
         val prefNameDEPTHMAP = res.getString(R.string.export_opt_cb_disparity_maps_key)
         val prefNameSTCV = res.getString(R.string.export_opt_cb_CV_2x1_key)
@@ -306,6 +389,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         val prefNameCurrentFilename = res.getString(R.string.pref_string_state_selected_filename)
 //        val prefNameCurrentFilepath = res.getString(R.string.pref_string_state_selected_filepath)
 
+        val EXPORT_4V_AI = sharedPref.getInt(prefName4VAI,0).toBoolean()
         val EXPORT_4V_ST = sharedPref.getInt(prefName4VST,0).toBoolean()
         val EXPORT_DISPARITY_MAPS = sharedPref.getInt(prefNameDEPTHMAP,0).toBoolean()
         val EXPORT_ST_CROSSVIEW = sharedPref.getInt(prefNameSTCV,0).toBoolean()
@@ -325,6 +409,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //        Log.i(TAG,"$prefNamePREVIEW3D $PREVIEW_3D")
         Log.i(TAG,"$mCurrentImageIsStacked")
 
+        // TODO: move to a determine mode fn
         var mode: PreviewMode = PreviewMode.MODE_2V
         if(multiviewImage?.viewPoints?.size === 2){
             if(PREVIEW_3D){
@@ -359,8 +444,8 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         }
 
         val type = when(EXPORT_DISPARITY_MAPS) {
-            true -> "DISPARITY"
-            false -> "ALBEDO"
+            true -> MapType.MAP_DISPARITY
+            false -> MapType.MAP_ALBEDO
         }
 
         currentPreviewMode = mode;
@@ -371,6 +456,10 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         textArea?.append("\npreview mode: "+mode.name)
         textArea?.append("\ndims: "+dimensions.outWidth.toString()+"x"+dimensions.outHeight.toString())
         textArea?.append("\nfilename: $mCurrentFilename")
+        textArea?.append("\nfile type: $mCurrentFileType")
+//        textArea?.append("\ngain: $mCurrentFilename")
+//        textArea?.append("\nconvergence: $mCurrentFilename")
+//        textArea?.append("\nDOF: $mCurrentFilename")
 
         val useSynthesizer2 = multiviewImage?.e?.name ?: "unknown" == "NEURAL_STEREO"
                 && !EXPORT_4V_ST
@@ -395,31 +484,23 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
                     .ARGB_8888,true))
             }
         }
-        // todo: bring this back
-//        if(mode == PreviewMode.MODE_4V){
-//
+
+        if(PREVIEW_3D){
+            mainActivity?.quadView?.visibility = View.VISIBLE
+            preview2DSurface?.visibility = View.GONE
+        }else{
+            mainActivity?.quadView?.visibility = View.GONE
+            preview2DSurface?.visibility = View.VISIBLE
+        }
 
     }
 
-    fun scale2(width: Int, height: Int, originalImage: Bitmap): Bitmap{
+    private fun scale2(width: Int, height: Int, originalImage: Bitmap): Bitmap{
         val background: Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config
             .ARGB_8888)
 
-//        return originalImage
-
-//        val widthFactor: Int = if(mCurrentImageIsStacked){
-//            2
-//        }else{
-//            1
-//        }
-//        val heightFactor: Int = if(mCurrentImageIsStacked && arrayOf(PreviewMode.MODE_4V,PreviewMode
-//                .MODE_4V_ST).contains(currentPreviewMode)){
-//            2
-//        }else{
-//            1
-//        }
-        val originalWidth: Int = originalImage.width// * widthFactor
-        val originalHeight: Int = originalImage.height// * heightFactor
+        val originalWidth: Int = originalImage.width
+        val originalHeight: Int = originalImage.height
 
         val canvas = Canvas(background)
 

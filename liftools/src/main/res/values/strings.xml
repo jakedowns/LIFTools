@@ -1,17 +1,15 @@
 <resources>
-    <string name="app_name">Sample-render-lif</string>
-    <string name="app_description">Use this app to export SBS 2x1\nversions of your LightField
-        (LIF)\nImages captured with\nLume Pad or RH1</string>
-    <string name="open_lightfield_image">Open Lightfield Image</string>
+    <string name="app_name">LIF Tools</string>
+    <string name="app_description">LIF Tools v0.1 by <u>@jakedowns</u></string>
+    <string name="intro_text">Select a LIF Image to get started</string>
+    <string name="open_lightfield_image">Open LIF Image</string>
     <string name="export_images">Export Image(s)...</string>
     <string name="crossview_option_label">Swap L/R (Crossview)</string>
     <string name="textview">TextView</string>
-    <string name="export_string_4V_AI">4V 2x2\nAI synthesized from stereo pair</string>
-    <string name="export_string_4V_ST">ST 2x2\nfor uploading to LeiaPix, bypassing 4V depth
-        synthesis)</string>
-    <string name="export_string_ST_2x1">ST 2x1\nSBS format for viewing on other devices like VR
-        headsets</string>
-    <string name="export_string_CV_2x1">Crossview 2x1</string>
+    <string name="export_string_4V_AI">AI 4V 2x2\nAI synthesized from stereo pair</string>
+    <string name="export_string_4V_ST">4V ST 2x2\nL,L,R,R Quad. Used to upload an image to LeiaPix that you want to force into 2V ST mode (bypasses AI depth estimation)</string>
+    <string name="export_string_ST_2x1">SBS ST 2x1\nSimple Half-SBS format for viewing on other devices like VR headsets</string>
+    <string name="export_string_CV_2x1">Crossview 2x1\nHalf-SBS with L/R swapped</string>
     <string name="export_string_disparity_maps">Export Disparity Maps</string>
 
     <string name="export_opt_cb_ST_2x1_key">ST_2x1</string>
@@ -25,9 +23,17 @@
     <string name="MODE_4V_ST">MODE_4V_ST</string>
     <string name="MODE_4V">MODE_4V</string>
     <string name="MODE_ST_CROSSVIEW">MODE_ST_CROSSVIEW</string>
-    <string name="toggle_preview_3d">Toggle 3D Preview</string>
+    <string name="toggle_preview_3d">PREVIEW 3D</string>
     <string name="pick_new_image">Pick New Image</string>
     <string name="pref_string_state_selected_filepath">PREF_STRING_STATE_SELECTED_FILEPATH</string>
     <string name="pref_string_state_selected_filename">PREF_STRING_STATE_SELECTED_FILENAME</string>
     <string name="pref_string_export_path">PREF_STRING_EXPORT_PATH</string>
+    <string name="exporting">exporting...</string>
+    <string name="dontate_link">Find this app useful? <u>Click here to donate</u>.</string>
+    <string name="paypal_col_label">PayPal</string>
+    <string name="paypal_name"><u>https://paypal.me/fallaciousimpala</u></string>
+    <string name="venmo_col_label">Venmo</string>
+    <string name="venmo_name"><u>https://venmo.com/jacobdowns3</u></string>
+    <string name="close_donate_modal">Back</string>
+    <string name="loading_text">loading...</string>
 </resources>
