@@ -1,6 +1,5 @@
 package com.jakedowns.LIFTools.app
 
-import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.graphics.*
@@ -17,13 +16,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import android.graphics.Bitmap
 
-import android.graphics.RectF
-import java.io.File
 import android.graphics.BitmapFactory
 import android.view.View
 import java.io.ByteArrayOutputStream
 import java.lang.Exception
-import android.widget.Toast
 import com.leiainc.androidsdk.photoformat.MultiviewFileType
 
 
@@ -46,8 +42,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         MODE_2V,
         MODE_4V_ST,
         MODE_4V,
-        MODE_ST_CROSSVIEW,
-        MODE_4V_2D
+        MODE_ST_CROSSVIEW
     }
 
     enum class MapType {
@@ -101,21 +96,26 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 
     fun exportBatch(exportModeList: ArrayList<Triple<PreviewMode, MapType, String>>) = viewModelScope.launch(Dispatchers.IO) {
         exportsRemainingCountLiveData.postValue(exportModeList.size)
+        // TODO: launch these jobs into a background queue
         for (i in 0 until exportModeList.size) {
             val (mode,map_type,filename) = exportModeList[i]
-//            val type = when(map_type){
-//                MapType.MAP_ALBEDO -> "ALBEDO"
-//                MapType.MAP_DISPARITY -> "DISPARITY"
-//            }
             val outputBitmap = generateBitmap(map_type,mode)
-            if(mainActivity!=null){
-                val (savedSuccessfully,message) = mainActivity!!.saveBitmap(outputBitmap,filename)
-                mainActivity!!.runOnUiThread(Runnable { Toast.makeText(mainActivity, message, Toast.LENGTH_SHORT).show() })
+            if(outputBitmap == null){
+                // error generating bitmap
+            }else if(mainActivity!=null){
+                try{
+                    val (savedSuccessfully,message) = mainActivity!!.saveBitmap(outputBitmap,filename)
+                }catch(e: Exception){
+                    e.printStackTrace()
+                }
+//                mainActivity!!.runOnUiThread(Runnable {
+//                    Toast.makeText(mainActivity, message, Toast.LENGTH_SHORT).show() })
             }
-            val next = if(exportsRemainingCountLiveData.value?:0 <= 1){
+            val curr = exportsRemainingCountLiveData.value?:0;
+            val next = if(curr < 2){
                 -1
             }else{
-                exportsRemainingCountLiveData.value?.minus(1)?:-1
+                kotlin.math.max(curr-1,-1)
             }
             exportsRemainingCountLiveData.postValue(next)
         }
@@ -179,7 +179,6 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //                quadBitmapLiveData.postValue(d1);
 
         quadBitmapLiveData.postValue(null)
-        mainActivity?.onErrorLoadingFromFile()
     }
 
     fun generateBitmap(type: MapType, mode: PreviewMode): Bitmap? {
@@ -189,12 +188,12 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         val width: Int
         val height: Int
 
-        val dLeft: Bitmap?
-        val dRight: Bitmap?
-        val dFarLeft: Bitmap?
-        val dFarRight: Bitmap?
+        var dLeft: Bitmap? = null
+        var dRight: Bitmap? = null
+        var dFarLeft: Bitmap? = null
+        var dFarRight: Bitmap? = null
 
-        val use1VMode = multiviewImage?.viewPoints?.size == 1
+        val sourceIsOneView = multiviewImage?.viewPoints?.size == 1
 
         val vp0 = multiviewImage?.viewPoints?.getOrNull(0)
         val vp1 = multiviewImage?.viewPoints?.getOrNull(1)
@@ -212,7 +211,7 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
             e.printStackTrace()
         }
         try{
-            val useSynthesizer2 = (mode === PreviewMode.MODE_4V || use1VMode) && type === MapType.MAP_ALBEDO
+            val useSynthesizer2 = mode === PreviewMode.MODE_4V && type === MapType.MAP_ALBEDO
             if(useSynthesizer2) {
                 val quadBitmap = synthesizer2?.toQuadBitmap(multiviewImage)
                 return quadBitmap
@@ -221,22 +220,57 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
             e.printStackTrace()
         }
 
-        // TODO: if 1V mode detected, split image out of synthesized quadview
-//        synthesizer2?.toTiledBitmap()
+        var oneViewFarLeft: Bitmap? = null
+        var oneViewLeft: Bitmap? = null
+        var oneViewRight: Bitmap? = null
+        var oneViewFarRight: Bitmap? = null
+        var oneViewCreated = false
+        if(sourceIsOneView){
+            try{
+                val quadBitmap = synthesizer2?.toQuadBitmap(multiviewImage)
+                if(quadBitmap != null){
+                    val splitBitmap = splitBitmap(quadBitmap, 2, 2)
+                    oneViewFarLeft = splitBitmap[0][0]
+                    oneViewLeft = splitBitmap[0][1]
+                    oneViewRight = splitBitmap[1][0]
+                    oneViewFarRight = splitBitmap[1][1]
+                    oneViewCreated = true
+                }
+            }catch(e: Exception){
+                e.printStackTrace()
+            }
+        }
+
+        Log.i(TAG,"oneViewCreated? ${oneViewCreated}")
 
         when(mode){
             PreviewMode.MODE_4V -> {
                 // real 4v
-                if(type === MapType.MAP_DISPARITY){
-                    dFarLeft = vp0?.disparity
-                    dLeft = vp1?.disparity
-                    dRight = vp2?.disparity
-                    dFarRight = vp3?.disparity
+                if(sourceIsOneView){
+                    if(type === MapType.MAP_DISPARITY){
+                        // mono depth
+                        dFarLeft = vp0?.disparity
+                        dLeft = vp0?.disparity
+                        dRight = vp0?.disparity
+                        dFarRight = vp0?.disparity
+                    }else{
+                        dFarLeft = oneViewFarLeft
+                        dLeft = oneViewLeft
+                        dRight = oneViewRight
+                        dFarRight = oneViewFarRight
+                    }
                 }else{
-                    dFarLeft = vp0?.albedo
-                    dLeft = vp1?.albedo
-                    dRight = vp2?.albedo
-                    dFarRight = vp3?.albedo
+                    if(type === MapType.MAP_DISPARITY){
+                        dFarLeft = vp0?.disparity
+                        dLeft = vp1?.disparity
+                        dRight = vp2?.disparity
+                        dFarRight = vp3?.disparity
+                    }else{
+                        dFarLeft = vp0?.albedo
+                        dLeft = vp1?.albedo
+                        dRight = vp2?.albedo
+                        dFarRight = vp3?.albedo
+                    }
                 }
 
                 if(
@@ -252,25 +286,43 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //                        width = dimensions.outWidth
 //                        height = dimensions.outHeight
 //                    }
-                    width = dLeft.width * 2
-                    height = dLeft.height * 2
-                    comboBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    comboImage = Canvas(comboBitmap)
+                    if(sourceIsOneView && type === MapType.MAP_DISPARITY){
+                        // mono depth
+                        comboBitmap = dLeft;
+                    }else{
+                        // quad
+                        width = dLeft.width * 2
+                        height = dLeft.height * 2
+                        comboBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        comboImage = Canvas(comboBitmap)
 
-                    comboImage.drawBitmap(dFarLeft, 0f, 0f, null)
-                    comboImage.drawBitmap(dLeft, dLeft.width.toFloat(), 0f, null)
-                    comboImage.drawBitmap(dRight, 0f, dLeft.height.toFloat(), null)
-                    comboImage.drawBitmap(dFarRight, dLeft.width.toFloat(), dLeft
-                        .height.toFloat(), null)
+                        comboImage.drawBitmap(dFarLeft, 0f, 0f, null)
+                        comboImage.drawBitmap(dLeft, dLeft.width.toFloat(), 0f, null)
+                        comboImage.drawBitmap(dRight, 0f, dLeft.height.toFloat(), null)
+                        comboImage.drawBitmap(dFarRight, dLeft.width.toFloat(), dLeft
+                            .height.toFloat(), null)
+                    }
                 }
             }
             PreviewMode.MODE_4V_ST -> {
-                if(type === MapType.MAP_DISPARITY){
-                    dLeft = vp0?.disparity
-                    dRight = vp1?.disparity
+                if(sourceIsOneView) {
+                    if(type === MapType.MAP_DISPARITY){
+                        // Mono disparity by default
+                        // TODO: add an option to generate more
+                        dLeft = vp0?.disparity
+                        dRight = vp0?.disparity
+                    }else{
+                        dLeft = oneViewLeft
+                        dRight = oneViewRight
+                    }
                 }else{
-                    dLeft = vp0?.albedo
-                    dRight = vp1?.albedo
+                    if(type === MapType.MAP_DISPARITY){
+                        dLeft = vp0?.disparity
+                        dRight = vp1?.disparity
+                    }else{
+                        dLeft = vp0?.albedo
+                        dRight = vp1?.albedo
+                    }
                 }
 
                 if(dLeft != null && dRight != null){
@@ -296,25 +348,43 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
                         }
                     }
 
-                    comboBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    comboImage = Canvas(comboBitmap)
-                    comboImage.drawBitmap(dLeft, 0f, 0f, null)
-                    comboImage.drawBitmap(dLeft, dLeft.width.toFloat(), 0f, null)
-                    comboImage.drawBitmap(dRight, 0f, dLeft.height.toFloat(), null)
-                    comboImage.drawBitmap(
-                        dRight, dLeft.width.toFloat(), dLeft.height
-                            .toFloat(), null)
+                    if(sourceIsOneView && type === MapType.MAP_DISPARITY){
+                        // mono depth
+                        comboBitmap = dLeft
+                    }else{
+                        comboBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        comboImage = Canvas(comboBitmap)
+                        comboImage.drawBitmap(dLeft, 0f, 0f, null)
+                        comboImage.drawBitmap(dLeft, dLeft.width.toFloat(), 0f, null)
+                        comboImage.drawBitmap(dRight, 0f, dLeft.height.toFloat(), null)
+                        comboImage.drawBitmap(
+                            dRight, dLeft.width.toFloat(), dLeft.height
+                                .toFloat(), null)
+                    }
+
                 }
 
             }
             else -> {
                 // 2V 2x1 SBS
-                if(type === MapType.MAP_DISPARITY){
-                    dLeft = vp0?.disparity
-                    dRight = vp1?.disparity
+                if(sourceIsOneView) {
+                    if(type === MapType.MAP_DISPARITY){
+                        // TODO: when 1V detected: option to export mono depth map
+                        //  OR to create a stereo depth map by feeding L/R into network and synthesizing them
+                        dLeft = vp0?.disparity
+                        dRight = vp0?.disparity
+                    }else{
+                        dLeft = oneViewLeft
+                        dRight = oneViewRight
+                    }
                 }else{
-                    dLeft = vp0?.albedo
-                    dRight = vp1?.albedo
+                    if(type === MapType.MAP_DISPARITY){
+                        dLeft = vp0?.disparity
+                        dRight = vp1?.disparity
+                    }else{
+                        dLeft = vp0?.albedo
+                        dRight = vp1?.albedo
+                    }
                 }
 
                 if(dLeft != null && dRight != null){
@@ -322,6 +392,9 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
                     height = dLeft.height //dimensions.outHeight
                     comboBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                     comboImage = Canvas(comboBitmap)
+//                    if(sourceIsOneView && type === MapType.MAP_DISPARITY){
+//
+//                    }else
                     if(mode == PreviewMode.MODE_ST_CROSSVIEW){
                         comboImage.drawBitmap(dRight, 0f, 0f, null)
                         comboImage.drawBitmap(dLeft, dLeft.width.toFloat(), 0f, null)
@@ -338,6 +411,26 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
         return comboBitmap
     }
 
+    fun splitBitmap(bitmap: Bitmap, xCount: Int, yCount: Int): Array<Array<Bitmap?>> {
+        // Allocate a two dimensional array to hold the individual images.
+        val bitmaps = Array(xCount) { arrayOfNulls<Bitmap>(yCount) }
+        val width: Int
+        val height: Int
+        // Divide the original bitmap width by the desired vertical column count
+        width = bitmap.width / xCount
+        // Divide the original bitmap height by the desired horizontal row count
+        height = bitmap.height / yCount
+        // Loop the array and create bitmaps for each coordinate
+        for (x in 0 until xCount) {
+            for (y in 0 until yCount) {
+                // Create the sliced bitmap
+                bitmaps[x][y] = Bitmap.createBitmap(bitmap, x * width, y * height, width, height)
+            }
+        }
+        // Return the array
+        return bitmaps
+    }
+
     // extension function to convert bitmap to byte array
     fun Bitmap.toByteArray():ByteArray{
         ByteArrayOutputStream().apply {
@@ -347,19 +440,21 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
     }
 
     fun redrawQuad() {
-        if(multiviewImage == null){
-            Log.i(TAG,"redrawQuad: mvi not found")
-            return
-        }
         if(mainActivity != null){
             if(
-                mainActivity?.viewingIntro == true
+                multiviewImage == null
+                || mainActivity?.mViewingIntro == true
                 || mainActivity?.mViewingDontateModal?:false
                 || exportsRemainingCountLiveData.value?:0 > 0
                 || mainActivity?.mWaitingForFirstRenderAfterImport?:false
             ){
+                mainActivity?.quadView?.visibility = View.GONE
+                preview2DSurface?.visibility = View.GONE
                 return
             }
+        }
+        if(multiviewImage == null){
+            return;
         }
         val context = app.applicationContext
 //        Log.w(TAG,"how many viewpoints? "+multiviewImage?.viewPoints?.size);
@@ -409,39 +504,12 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
 //        Log.i(TAG,"$prefNamePREVIEW3D $PREVIEW_3D")
         Log.i(TAG,"$mCurrentImageIsStacked")
 
-        // TODO: move to a determine mode fn
-        var mode: PreviewMode = PreviewMode.MODE_2V
-        if(multiviewImage?.viewPoints?.size === 2){
-            if(PREVIEW_3D){
-                if(multiviewImage?.e?.name ?: "unknown" == "NEURAL_STEREO" && !EXPORT_4V_ST){
-                    mode = PreviewMode.MODE_4V
-                }else{
-                    mode = PreviewMode.MODE_4V_ST
-                }
-            }else{
-                if(EXPORT_4V_ST){
-                    mode = PreviewMode.MODE_4V_ST
-                } else if(EXPORT_ST_CROSSVIEW){
-                    mode = PreviewMode.MODE_ST_CROSSVIEW
-                }else{
-                    mode = PreviewMode.MODE_2V
-                }
-            }
-        }else if(multiviewImage?.viewPoints?.size === 4){
-            if(PREVIEW_3D){
-                if(EXPORT_4V_ST){
-                    mode = PreviewMode.MODE_4V_ST
-                }else{
-                    mode = PreviewMode.MODE_4V
-                }
-            }else{
-                if(EXPORT_4V_ST){
-                    mode = PreviewMode.MODE_4V_ST
-                }else{
-                    mode = PreviewMode.MODE_4V_2D
-                }
-            }
-        }
+        var mode: PreviewMode = getPreviewMode(
+            EXPORT_4V_AI = EXPORT_4V_AI,
+            EXPORT_4V_ST = EXPORT_4V_ST,
+            EXPORT_ST_CROSSVIEW = EXPORT_ST_CROSSVIEW,
+            PREVIEW_3D = PREVIEW_3D
+        )
 
         val type = when(EXPORT_DISPARITY_MAPS) {
             true -> MapType.MAP_DISPARITY
@@ -467,6 +535,14 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
                 && PREVIEW_3D
                 && !EXPORT_DISPARITY_MAPS
 
+        if(PREVIEW_3D){
+            mainActivity?.quadView?.visibility = View.VISIBLE
+            preview2DSurface?.visibility = View.GONE
+        }else{
+            mainActivity?.quadView?.visibility = View.GONE
+            preview2DSurface?.visibility = View.VISIBLE
+        }
+
         if(useSynthesizer2){
             val quadBitmap = synthesizer2?.toQuadBitmap(multiviewImage)
             quadBitmapLiveData.postValue(quadBitmap)
@@ -485,14 +561,36 @@ class MainViewModel(private val app: Application): AndroidViewModel(app) {
             }
         }
 
-        if(PREVIEW_3D){
-            mainActivity?.quadView?.visibility = View.VISIBLE
-            preview2DSurface?.visibility = View.GONE
-        }else{
-            mainActivity?.quadView?.visibility = View.GONE
-            preview2DSurface?.visibility = View.VISIBLE
-        }
 
+
+    }
+
+    private fun getPreviewMode(
+        EXPORT_4V_AI: Boolean,
+        EXPORT_4V_ST: Boolean,
+        EXPORT_ST_CROSSVIEW: Boolean,
+        PREVIEW_3D: Boolean
+    ): PreviewMode{
+        return when {
+            EXPORT_4V_AI -> {
+                PreviewMode.MODE_4V
+            }
+            EXPORT_4V_ST -> {
+                PreviewMode.MODE_4V_ST
+            }
+            EXPORT_ST_CROSSVIEW -> {
+                when(PREVIEW_3D) {
+                    true -> PreviewMode.MODE_4V_ST
+                    else -> PreviewMode.MODE_ST_CROSSVIEW
+                }
+            }
+            else -> {
+                when(PREVIEW_3D) {
+                    true -> PreviewMode.MODE_4V_ST
+                    else -> PreviewMode.MODE_2V
+                }
+            }
+        }
     }
 
     private fun scale2(width: Int, height: Int, originalImage: Bitmap): Bitmap{
