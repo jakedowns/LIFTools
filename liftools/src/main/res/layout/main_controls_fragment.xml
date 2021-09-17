@@ -97,6 +97,16 @@
                         android:textColor="@color/white"
                         android:textSize="16sp" />
 
+                    <CheckBox
+                        android:id="@+id/cb_split_views"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="10dp"
+                        android:onClick="onCheckboxClicked"
+                        android:text="@string/export_string_split_views"
+                        android:textColor="@color/white"
+                        android:textSize="16sp" />
+
                     <Space
                         android:layout_width="10dp"
                         android:layout_height="wrap_content" />
@@ -130,14 +140,14 @@
             android:weightSum="100"
             android:layout_gravity="bottom">
             <Button
-                android:id="@+id/action_pick_new_image"
+                android:id="@+id/action_back_to_main"
                 android:layout_width="0dp"
                 android:layout_weight="50"
                 android:layout_height="wrap_content"
-                android:onClick="onPickNewClicked"
+                android:onClick="onBackToMainClicked"
                 android:layout_gravity="top"
                 android:layout_marginHorizontal="10dp"
-                android:text="@string/pick_new_image"
+                android:text="@string/back_to_main"
                 android:textSize="24sp"/>
 
             <Button

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <FrameLayout
+        android:id="@+id/surface_wrapper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:onClick="onTapSurface"
+        tools:visibility="visible">
+        <TextView android:text="test"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center|center_vertical"></TextView>
+    </FrameLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

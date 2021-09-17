@@ -1,0 +1,6 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="com.jakedowns.LIFTools.app.ShareActivityExported">
+        <data android:mimeType="image/*"/>
+        <category android:name="CATEGORY_NAME"/>
+    </share-target>
+</shortcuts>

@@ -1,9 +1,9 @@
 <resources>
     <string name="app_name">LIF Tools</string>
     <string name="app_description">LIF Tools v0.1 by <u>@jakedowns</u></string>
-    <string name="intro_text">Select a LIF Image to get started</string>
-    <string name="open_lightfield_image">Open LIF Image</string>
-    <string name="export_images">Export Image(s)...</string>
+    <string name="intro_text">Select a LIF Image to Dissect\nor 1, 2 or 4 Plain Images to make 2V or 4V</string>
+    <string name="open_lightfield_image">Select Image(s)…</string>
+    <string name="export_images">Export Image(s)…</string>
     <string name="crossview_option_label">Swap L/R (Crossview)</string>
     <string name="textview">TextView</string>
     <string name="export_string_4V_AI">AI 4V 2x2\nAI synthesized from stereo pair</string>
@@ -11,6 +11,7 @@
     <string name="export_string_ST_2x1">SBS ST 2x1\nSimple Half-SBS format for viewing on other devices like VR headsets</string>
     <string name="export_string_CV_2x1">Crossview 2x1\nHalf-SBS with L/R swapped</string>
     <string name="export_string_disparity_maps">Export Disparity Maps</string>
+    <string name="export_string_split_views">Export Views as Separate Files</string>
 
     <string name="export_opt_cb_ST_2x1_key">ST_2x1</string>
     <string name="export_opt_cb_4V_ST_key">4V_ST</string>
@@ -18,22 +19,24 @@
     <string name="export_opt_cb_CV_2x1_key">CV_2X1</string>
     <string name="export_opt_cb_disparity_maps_key">EXPORT_DISPARITY_MAPS</string>
     <string name="export_opt_cb_PREVIEW_3D_key">PREVIEW_3D</string>
+    <string name="export_opt_cb_split_views_key">SPLIT_VIEWS</string>
     <string name="user_prefs_key">USER_PREFS</string>
     <string name="MODE_2V">MODE_2V</string>
     <string name="MODE_4V_ST">MODE_4V_ST</string>
     <string name="MODE_4V">MODE_4V</string>
     <string name="MODE_ST_CROSSVIEW">MODE_ST_CROSSVIEW</string>
     <string name="toggle_preview_3d">PREVIEW 3D</string>
-    <string name="pick_new_image">Pick New Image</string>
+    <string name="back_to_main">Back to Main</string>
     <string name="pref_string_state_selected_filepath">PREF_STRING_STATE_SELECTED_FILEPATH</string>
     <string name="pref_string_state_selected_filename">PREF_STRING_STATE_SELECTED_FILENAME</string>
     <string name="pref_string_export_path">PREF_STRING_EXPORT_PATH</string>
-    <string name="exporting">exporting...</string>
+    <string name="exporting">exporting…</string>
     <string name="dontate_link">Find this app useful? <u>Click here to donate</u>.</string>
     <string name="paypal_col_label">PayPal</string>
     <string name="paypal_name"><u>https://paypal.me/fallaciousimpala</u></string>
     <string name="venmo_col_label">Venmo</string>
     <string name="venmo_name"><u>https://venmo.com/jacobdowns3</u></string>
     <string name="close_donate_modal">Back</string>
-    <string name="loading_text">loading...</string>
+    <string name="loading_text">loading…</string>
+    <string name="open_multiple_images">Make 3D from 1, 2 or 4 Imgs</string>
 </resources>
