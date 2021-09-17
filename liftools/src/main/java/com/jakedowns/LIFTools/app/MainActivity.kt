@@ -1,6 +1,7 @@
 package com.jakedowns.LIFTools.app
 
 import android.Manifest
+import android.R.attr
 import android.R.attr.*
 import android.app.Activity
 import android.content.Context
@@ -32,14 +33,29 @@ import kotlinx.coroutines.launch
 import org.apache.commons.io.FilenameUtils
 import java.io.File
 import com.jakedowns.LIFTools.app.MainViewModel.MapType
+import androidx.core.app.ActivityCompat.startActivityForResult
+import com.sjd.multipleimageselect.activities.AlbumSelectActivity
+import com.sjd.multipleimageselect.helpers.Constants
+import android.R.attr.data
+import android.app.Person
+import android.graphics.Color
+import android.graphics.drawable.Icon
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import com.sjd.multipleimageselect.models.Image
 
 
 // Request Codes
 const val REQUEST_PICK_IMAGE_FILE = 100
 const val REQUEST_PICK_OUTPUT_DIR = 101
+const val REQUEST_PICK_MULTIPLE_IMAGE_FILES = 102
 
-class MainActivity : AsyncActivity(), EventListener {
-    val TAG: String = "LIFTools"
+class MainActivity : AsyncActivity() {
+
+    companion object {
+        const val TAG = "LIFTools"
+    }
 
     private val mainViewModel by viewModels<MainViewModel>()
     private var preview2DSurface: PreviewSurfaceView? = null
@@ -58,6 +74,9 @@ class MainActivity : AsyncActivity(), EventListener {
         }
 
     var mSelectedFilename: String? = null
+    lateinit var mSelectedComboFilenames: ArrayList<String>
+    lateinit var mSelectedComboFilepaths: ArrayList<String>
+    lateinit var mSelectedComboUris: ArrayList<Uri>
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
@@ -166,31 +185,47 @@ class MainActivity : AsyncActivity(), EventListener {
 
     fun responsiveButtonLayout(mainControlsVizNext: Int, config: Configuration, buttonWrapper: LinearLayout?){
         if(mainControlsVizNext == View.VISIBLE){
-            val b1 = buttonWrapper?.findViewById<Button>(R.id.action_pick_new_image)
-            val b2 = buttonWrapper?.findViewById<Button>(R.id.action_export_images)
+            val backButton = buttonWrapper?.findViewById<Button>(R.id.action_back_to_main)
+            val exportButton = buttonWrapper?.findViewById<Button>(R.id.action_export_images)
             // check orientation of button wrapper
-            val lp1 = b1?.getLayoutParams()
-            val lp2 = b2?.getLayoutParams()
+            val backButtonLayoutParams = backButton?.getLayoutParams()
+            val exportButtonLayoutParams = exportButton?.getLayoutParams()
+            val exportButtonEnabled = mainControlsVizNext == View.VISIBLE
+                    && mainViewModel.exportEnabled()
             if(config.orientation == Configuration.ORIENTATION_LANDSCAPE){
                 buttonWrapper?.orientation = LinearLayout.HORIZONTAL
 
-                lp1?.width = 0
-                lp1?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                backButtonLayoutParams?.width = 0
+                backButtonLayoutParams?.height = LinearLayout.LayoutParams.WRAP_CONTENT
 
-                lp2?.width = 0
-                lp2?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                exportButtonLayoutParams?.width = 0
+                exportButtonLayoutParams?.height = LinearLayout.LayoutParams.WRAP_CONTENT
             }else{
                 buttonWrapper?.orientation = LinearLayout.VERTICAL
 
-                lp1?.width = LinearLayout.LayoutParams.MATCH_PARENT
-                lp1?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                backButtonLayoutParams?.width = LinearLayout.LayoutParams.MATCH_PARENT
+                backButtonLayoutParams?.height = LinearLayout.LayoutParams.WRAP_CONTENT
 
-                lp2?.width = LinearLayout.LayoutParams.MATCH_PARENT
-                lp2?.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                exportButtonLayoutParams?.width = LinearLayout.LayoutParams.MATCH_PARENT
+                exportButtonLayoutParams?.height = LinearLayout.LayoutParams.WRAP_CONTENT
             }
-            b1?.layoutParams = lp1
-            b2?.layoutParams = lp2
+            if(exportButtonEnabled){
+                exportButton?.setBackgroundColor(getColor(R.color.purple_200));
+                exportButton?.isEnabled = true
+                exportButton?.text = "export ${mainViewModel.getNumFilesToExport()} images"
+            }else{
+                exportButton?.setBackgroundColor(Color.parseColor("#808080"));
+                exportButton?.isEnabled = false
+                exportButton?.text = "pick export option"
+            }
+            backButton?.layoutParams = backButtonLayoutParams
+            exportButton?.layoutParams = exportButtonLayoutParams
         }
+    }
+
+    fun contextualizeSplitViewsOption() {
+        // should we conditionally hide the split view option when the user is providing multiple input images?
+        // maybe not, valid to want 1->2, 1->4, 2->4, but 2->2, 4->4 would be redundant
     }
 
     fun contextualizeDepthMapOption() {
@@ -219,6 +254,7 @@ class MainActivity : AsyncActivity(), EventListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super<AsyncActivity>.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        addShareShortcuts(applicationContext)
 
         displayManager = LeiaSDK.getDisplayManager(applicationContext)
 
@@ -231,8 +267,13 @@ class MainActivity : AsyncActivity(), EventListener {
 
         val button: Button = findViewById(R.id.action_open_image_picker)
         button.setOnClickListener(View.OnClickListener {
-            showFilePicker()
+            showMultiFilePicker()
         })
+
+//        val button2: Button = findViewById(R.id.action_open_multi_image_picker)
+//        button2.setOnClickListener(View.OnClickListener {
+//            showMultiFilePicker()
+//        })
 
         // share some vars (Anti-pattern probably)
         mainViewModel.mainActivity = this
@@ -268,6 +309,139 @@ class MainActivity : AsyncActivity(), EventListener {
         updateUIViz()
     }
 
+    fun addShareShortcuts(context: Context) {
+        val shortcutInfoList = mutableListOf<ShortcutInfoCompat>()
+        shortcutInfoList.add(
+            ShortcutInfoCompat.Builder(context, "LIFToolsShortcutID")
+                .setShortLabel("LIF Tools")
+//                .setPerson(Person.Builder()...build())
+            .setIcon(IconCompat.createWithResource(this,R.drawable.liftoolslogo))
+            .setCategories(setOf("CATEGORY_NAME"))
+            .setIntent(Intent(Intent.ACTION_DEFAULT))
+            .build())
+
+        ShortcutManagerCompat.addDynamicShortcuts(context, shortcutInfoList)
+    }
+
+    private fun showMultiFilePicker() {
+        val intent = Intent(this, AlbumSelectActivity::class.java)
+        //set limit on number of images that can be selected, default is 10
+        val numberOfImagesToSelect = 4;
+        intent.putExtra(Constants.INTENT_EXTRA_LIMIT, numberOfImagesToSelect)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        //startActivityForResult(intent, REQUEST_PICK_MULTIPLE_IMAGE_FILES)
+        GlobalScope.launch(Dispatchers.Main) {
+            val result = launchIntent(intent).await()
+            val images: ArrayList<Image>? = result?.data?.getParcelableArrayListExtra(Constants.INTENT_EXTRA_IMAGES)
+            images?.let {
+                if(images.size != 1 && images.size != 2 && images.size != 4) {
+                    // error: invalid # of images please select 1, 2 or 4
+                    runOnUiThread {
+                        onErrorLoadingFromFile("Please select 1, 2 or 4 images")
+                    }
+                }else{
+                    GlobalScope.launch(Dispatchers.IO){
+                        onSuccessfullyPickedMultiple(images)
+                    }
+                }
+                return@launch
+            }
+            // fall through case, some other error
+            runOnUiThread {
+                onErrorLoadingFromFile("no images selected")
+            }
+        }
+    }
+
+    fun onSuccessfullyPickedMultiple(images: ArrayList<Image>){
+        val circleSpinnerWrapper = findViewById<View?>(R.id.progress_spinner_wrapper)
+        // 1 or 2 or 4
+        runOnUiThread {
+            mViewingIntro = false
+            mWaitingForFirstRenderAfterImport = true
+            circleSpinnerWrapper?.visibility = View.VISIBLE
+        }
+        var i: Int = 0
+        val l: Int = images.size
+
+        mSelectedComboFilenames = ArrayList<String>()
+        mSelectedComboFilepaths = ArrayList<String>()
+        mSelectedComboUris = ArrayList<Uri>()
+
+        while (i < l) {
+            val pImage = images[i]
+            val file = File(pImage.path)
+            val uri = Uri.fromFile(file)
+
+            // persist permission to the file(s)
+            try{
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }catch(e: Exception){
+                Log.i(TAG,"failed to get persistable uri permission")
+                //e.printStackTrace()
+            }
+
+            // Get the Uri of the selected file
+            val uriString = uri.toString()
+            val myFile = File(uriString)
+            val path = myFile.absolutePath
+            val displayName: String? = getDisplayNameFromUri(uri)
+
+            val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
+                .user_prefs_key),Context
+                .MODE_PRIVATE)
+
+            with (sharedPref.edit()) {
+                putString("combo_picker_path_${i+1}",path)
+                putString("combo_picker_filename_${i+1}",displayName)
+                apply()
+            }
+            displayName?.let {
+                mSelectedComboFilenames.add(it)
+            }
+            mSelectedComboFilepaths.add(path)
+            mSelectedComboUris.add(uri)
+
+            //
+            i++;
+        }
+
+        try{
+            mainViewModel.openMultipleFiles(mSelectedComboUris)
+        }catch(e:Exception){
+            runOnUiThread {
+                onErrorLoadingFromFile(e.message)
+            }
+        }
+    }
+
+    private fun getDisplayNameFromUri(uri: Uri): String?{
+        val uriString = uri.toString()
+        val myFile = File(uriString)
+        var displayName: String? = null
+        if (uriString.startsWith("content://")) {
+            var cursor: Cursor? = null
+            try {
+                cursor =
+                    contentResolver.query(uri,
+                        null, null, null,
+                        null)
+                if (cursor != null && cursor.moveToFirst()) {
+                    displayName =
+                        cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME))
+                }
+            } finally {
+                cursor?.close()
+            }
+        } else if (uriString.startsWith("file://")) {
+            displayName = myFile.name
+        }
+        return displayName
+    }
+
     private val exportProgressObserver = Observer<Int> {
         val bar = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.progress_bar)
         val loadingText = findViewById<com.leiainc.androidsdk.core.AntialiasingTextView>(R.id.export_text)
@@ -287,10 +461,10 @@ class MainActivity : AsyncActivity(), EventListener {
     private val parsedFileCountObserver = Observer<Int> { _ ->
         runOnUiThread {
             mWaitingForFirstRenderAfterImport = false
-            updateUIViz()
             if(!setCheckboxStateFromSavedPrefs()){
                 Log.e(TAG,"Error setting checkboxes from saved prefs")
             }
+            updateUIViz()
             checkToggle3D(true)
         }
     }
@@ -303,6 +477,7 @@ class MainActivity : AsyncActivity(), EventListener {
         val res = applicationContext.resources;
         val prefName4VST = res.getString(R.string.export_opt_cb_4V_ST_key)
         val prefNameDEPTHMAP = res.getString(R.string.export_opt_cb_disparity_maps_key)
+        val prefNameSplitViews = res.getString(R.string.export_opt_cb_split_views_key)
         val prefNameST = res.getString(R.string.export_opt_cb_ST_2x1_key)
         val prefNameSTCV = res.getString(R.string.export_opt_cb_CV_2x1_key)
         val prefNamePREVIEW3D = res.getString(R.string.export_opt_cb_PREVIEW_3D_key)
@@ -313,7 +488,8 @@ class MainActivity : AsyncActivity(), EventListener {
         val exportDisparityMaps = sharedPref.getInt(prefNameDEPTHMAP,0).toBoolean()
         val export2VST = sharedPref.getInt(prefNameST,0).toBoolean()
         val exportSTCV = sharedPref.getInt(prefNameSTCV,0).toBoolean()
-        val preview3D = sharedPref.getInt(prefNamePREVIEW3D,1).toBoolean()
+        val preview3D = sharedPref.getInt(prefNamePREVIEW3D,0).toBoolean()
+        val splitViews = sharedPref.getInt(prefNameSplitViews,0).toBoolean()
 
         Log.i(TAG,"$export4VST $exportDisparityMaps $exportSTCV $preview3D")
 
@@ -324,6 +500,7 @@ class MainActivity : AsyncActivity(), EventListener {
             fragment.findViewById<CheckBox>(R.id.cb_disparity_maps)?.isChecked = exportDisparityMaps
             fragment.findViewById<CheckBox>(R.id.cb_CV_2x1)?.isChecked = exportSTCV
             fragment.findViewById<CheckBox>(R.id.cb_PREVIEW_3D)?.isChecked = preview3D
+            fragment.findViewById<CheckBox>(R.id.cb_split_views)?.isChecked = splitViews
         }
 
         return true
@@ -348,6 +525,7 @@ class MainActivity : AsyncActivity(), EventListener {
             // Optionally, specify a URI for the file that should appear in the
             // system file picker when it loads.
             putExtra(DocumentsContract.EXTRA_INITIAL_URI, pickerInitialUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
         // Original Sync Version:
@@ -398,29 +576,11 @@ class MainActivity : AsyncActivity(), EventListener {
                         val uriString = uri.toString()
                         val myFile = File(uriString)
                         val path = myFile.absolutePath
-                        var displayName: String? = null
-                        if (uriString.startsWith("content://")) {
-                            var cursor: Cursor? = null
-                            try {
-                                cursor =
-                                    contentResolver.query(uri,
-                                        null, null, null,
-                                        null)
-                                if (cursor != null && cursor.moveToFirst()) {
-                                    displayName =
-                                        cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME))
-                                }
-                            } finally {
-                                cursor?.close()
-                            }
-                        } else if (uriString.startsWith("file://")) {
-                            displayName = myFile.name
-                        }
-//                Log.i(TAG,"$path $displayName")
+                        val displayName: String? = getDisplayNameFromUri(uri)
 
                         val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
                             .user_prefs_key),Context
-                            .MODE_PRIVATE) ?: return@also
+                            .MODE_PRIVATE)
 
                         with (sharedPref.edit()) {
                             putString(resources.getString(R.string
@@ -485,54 +645,61 @@ class MainActivity : AsyncActivity(), EventListener {
 ////            dropdown.adapter = adapter
 //    }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
-        super.onActivityResult(requestCode, resultCode, resultData)
-
-        when(requestCode){
-//            REQUEST_PICK_IMAGE_FILE -> {
+//    override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
+//        super.onActivityResult(requestCode, resultCode, resultData)
 //
-//            }
-            // unused for now
-//            REQUEST_PICK_OUTPUT_DIR -> {
-//                if (resultCode == Activity.RESULT_OK) {
-//                    Toast.makeText(this, "Exporting...", Toast.LENGTH_LONG)
-//                        .show()
-//                    resultData?.data?.also { fileUri ->
-//                        val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
-//                            .user_prefs_key),Context
-//                            .MODE_PRIVATE) ?: return
-//
-//                        with (sharedPref.edit()) {
-//                            putString(resources.getString(R.string
-//                                .pref_string_export_path), fileUri.path)
-//                            apply()
-//                        }
-//
-//                        Log.i(TAG, "user selected output dir "+fileUri.path)
-//
-//                        mOutputUri = fileUri
-//                        finalizeExportAfterDirectorySelected()
-//                    }
-//                }else{
-//                    Toast.makeText(this, "Error selecting output directory. Try again or contact " +
-//                            "@jakedowns", Toast.LENGTH_LONG)
-//                        .show()
-//                }
-//            }
-            else -> {}
-        }
-
-    }
+//        when(requestCode){
+////            REQUEST_PICK_IMAGE_FILE -> {
+////
+////            }
+//            // unused for now
+////            REQUEST_PICK_OUTPUT_DIR -> {
+////                if (resultCode == Activity.RESULT_OK) {
+////                    Toast.makeText(this, "Exporting...", Toast.LENGTH_LONG)
+////                        .show()
+////                    resultData?.data?.also { fileUri ->
+////                        val sharedPref = getSharedPreferences(resources.getResourceEntryName(R.string
+////                            .user_prefs_key),Context
+////                            .MODE_PRIVATE) ?: return
+////
+////                        with (sharedPref.edit()) {
+////                            putString(resources.getString(R.string
+////                                .pref_string_export_path), fileUri.path)
+////                            apply()
+////                        }
+////
+////                        Log.i(TAG, "user selected output dir "+fileUri.path)
+////
+////                        mOutputUri = fileUri
+////                        finalizeExportAfterDirectorySelected()
+////                    }
+////                }else{
+////                    Toast.makeText(this, "Error selecting output directory. Try again or contact " +
+////                            "@jakedowns", Toast.LENGTH_LONG)
+////                        .show()
+////                }
+////            }
+//            else -> {}
+//        }
+//    }
 
     fun onErrorLoadingFromFile(){
-        mWaitingForFirstRenderAfterImport = false;
+        onErrorLoadingFromFile(null)
+    }
+    fun onErrorLoadingFromFile(str: String?){
+        var err = str;
+        if(err == null){
+            err = "Error opening selected file. Please try again."
+        }
         // return to "intro" screen
         returnToIntroView()
-        Toast.makeText(this, "Error opening selected file. Please try again.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, err, Toast.LENGTH_LONG).show()
     }
 
     fun returnToIntroView(){
+        checkToggle3D(false)
         mViewingIntro = true
+        mWaitingForFirstRenderAfterImport = false;
         updateUIViz()
     }
 
@@ -554,7 +721,7 @@ class MainActivity : AsyncActivity(), EventListener {
         updateUIViz(newConfig)
     }
 
-    override fun onCheckboxClicked(view: View) {
+    fun onCheckboxClicked(view: View) {
         val id = resources.getResourceEntryName(view.id)
         val cb: CheckBox = view as CheckBox;
         val enabled = cb.isChecked().toInt()
@@ -566,11 +733,12 @@ class MainActivity : AsyncActivity(), EventListener {
         GlobalScope.launch(Dispatchers.Main) {
             with(sharedPref.edit()) {
                 putInt(keyname, enabled)
-                apply()
-                // TODO: debounce/throttle redrawQuad
-                mainViewModel.redrawQuad()
+                val success = commit() // intentionally using synchronous method here rather than async apply()
                 if (id == "cb_PREVIEW_3D") {
                     checkToggle3D(true)
+                }
+                runOnUiThread{
+                    updateUIViz()
                 }
             }
             return@launch
@@ -604,13 +772,16 @@ class MainActivity : AsyncActivity(), EventListener {
         }
     }
 
-    override fun onPickNewClicked(view: View) {
-        showFilePicker()
-        Log.i(TAG,"todo show file picker")
+    fun onBackToMainClicked(view: View){
+        returnToIntroView()
     }
 
-    override fun onExportClicked(view: View) {
+    fun onExportClicked(view: View) {
         // Log.i(TAG, "TODO: export")
+        if(mainViewModel.getNumFilesToExport() < 1){
+            // TODO: throw nice error toast
+            return;
+        }
 
         // TODO: prompt user with a dialog stating the previously selected output dir (default to
         //  Photos, or same dir as input?)
@@ -652,29 +823,25 @@ class MainActivity : AsyncActivity(), EventListener {
         }
     }
 
-    fun finalizeExportAfterDirectorySelected() {
-//        if(mOutputUri == null){
-//            return;
-//        }
+    fun rebuildExportList():ArrayList<ExportParamBag>{
+        numExportsPending = 0
+        val exportModeList = ArrayList<ExportParamBag>()
 
         // build array of selected modes
         // loop and generate bitmaps
         // save bitmaps to storage
         val ms = System.currentTimeMillis();
-        val selectedOptions = ExportOptionsModel.getSelectedExportOptionsObjectForApp(application)
+        val selectedOptions = mainViewModel.getSelectedExportOpts()//ExportOptionsModel.getSelectedExportOptionsObjectForApp(application)
 
         val filename_base = FilenameUtils.removeExtension(mSelectedFilename ?: "") + "_$ms"
 
-        numExportsPending = 0
-        val exportModeList = ArrayList<Triple<MainViewModel.PreviewMode,MainViewModel.MapType,String>>()
-
         // instead of getting fancy, let's hard code, then refactor later
         for(i in 0..3) {
-            var filename = filename_base.replace("_2x2","").replace("_2x1","")
+            val filename = filename_base.replace("_2x2","").replace("_2x1","")
             var mode = MainViewModel.PreviewMode.MODE_2V
             var suffix = "ST_2x1";
             when(i){
-                0 -> if(selectedOptions.EXPORT_ST) {
+                0 -> if(selectedOptions.EXPORT_2V_ST) {
                     // same as defaults
                     mode = MainViewModel.PreviewMode.MODE_2V
                     suffix = "ST_2x1"
@@ -683,7 +850,7 @@ class MainActivity : AsyncActivity(), EventListener {
                     mode = MainViewModel.PreviewMode.MODE_ST_CROSSVIEW
                     suffix = "ST_CROSSVIEW";
                 } else { continue }
-                2 -> if(selectedOptions.EXPORT_4V) {
+                2 -> if(selectedOptions.EXPORT_4V_AI) {
                     mode = MainViewModel.PreviewMode.MODE_4V
                     suffix = "4V_2x2";
                 } else { continue }
@@ -694,12 +861,89 @@ class MainActivity : AsyncActivity(), EventListener {
                 else -> continue
             }
             numExportsPending++
-            exportModeList.add(Triple(mode,MapType.MAP_ALBEDO,"${filename}_${suffix}.png"))
+            exportModeList.add(
+                ExportParamBag(
+                    mode,
+                    MapType.MAP_ALBEDO,
+                    "${filename}_${suffix}.png"
+                )
+            )
             if(selectedOptions.EXPORT_DISPARITY_MAPS){
                 numExportsPending++
-                exportModeList.add(Triple(mode,MapType.MAP_DISPARITY,"${filename}_${suffix}_depth.png"))
+                exportModeList.add(
+                    ExportParamBag(
+                        mode,
+                        MapType.MAP_DISPARITY,
+                        "${filename}_${suffix}_depth.png"
+                    )
+                )
             }
         }
+
+        if(selectedOptions.EXPORT_SPLIT_VIEWS){
+            // Input   Out 2   Out 4
+            // 1V      x       x
+            // 2V      x       x
+            // 4V      x       x
+            val filename = filename_base.replace("_2x2","").replace("_2x1","")
+            var i = 1;
+            for(specificView in arrayOf(
+                MainViewModel.NamedView.FL,
+                MainViewModel.NamedView.L,
+                MainViewModel.NamedView.R,
+                MainViewModel.NamedView.FR
+            )){
+                numExportsPending++
+                exportModeList.add(
+                    ExportParamBag(
+                        MainViewModel.PreviewMode.MODE_SPLIT_VIEWS,
+                        MapType.MAP_ALBEDO,
+                        "${filename}_$i$specificView.png",
+                        specificView
+                    )
+                )
+                if(selectedOptions.EXPORT_DISPARITY_MAPS){
+                    if(
+                        mainViewModel.multiviewImage?.viewPoints?.size == 1
+                        && specificView == MainViewModel.NamedView.FL
+                    ){
+                        numExportsPending++
+                        exportModeList.add(
+                            ExportParamBag(
+                                MainViewModel.PreviewMode.MODE_SPLIT_VIEWS,
+                                MapType.MAP_DISPARITY,
+                                "${filename}_${i}${specificView}_depth.png",
+                                specificView
+                            )
+                        )
+                    }else if(
+                        specificView == MainViewModel.NamedView.L
+                        || specificView == MainViewModel.NamedView.R
+                    ){
+                        numExportsPending++
+                        exportModeList.add(
+                            ExportParamBag(
+                                MainViewModel.PreviewMode.MODE_SPLIT_VIEWS,
+                                MapType.MAP_DISPARITY,
+                                "${filename}_${i}${specificView}_depth.png",
+                                specificView
+                            )
+                        )
+                    }
+                }
+                i++
+            }
+        }
+        return exportModeList
+    }
+
+    fun finalizeExportAfterDirectorySelected() {
+        // todo: default if user failed to select output directory
+//        if(mOutputUri == null){
+//            return;
+//        }
+
+        val exportModeList = rebuildExportList()
 
         // disable button if no modes selected
         // or throw visible error here

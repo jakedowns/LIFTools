@@ -11,6 +11,7 @@ data class ExportOptionsObject(
     val EXPORT_4V: Boolean,
     val EXPORT_4V_ST: Boolean,
     val EXPORT_DISPARITY_MAPS: Boolean,
+    val EXPORT_SPLIT_VIEWS: Boolean,
 )
 
 class ExportOptionsModel {
@@ -29,35 +30,38 @@ class ExportOptionsModel {
             val prefName4V = res.getString(R.string.export_opt_cb_4V_AI_key)
             val prefName4VST = res.getString(R.string.export_opt_cb_4V_ST_key)
             val prefNameDEPTHMAP = res.getString(R.string.export_opt_cb_disparity_maps_key)
+            val prefNameSplitViews = res.getString(R.string.export_opt_cb_split_views_key)
 
             val exportST = sharedPref.getInt(prefNameST, 0).toBoolean()
             val exportSTCrossView = sharedPref.getInt(prefNameSTCV, 0).toBoolean()
             val export4V = sharedPref.getInt(prefName4V, 0).toBoolean()
             val export4VST = sharedPref.getInt(prefName4VST, 0).toBoolean()
             val exportDisparityMaps = sharedPref.getInt(prefNameDEPTHMAP, 0).toBoolean()
+            val exportSplitViews = sharedPref.getInt(prefNameSplitViews, 0).toBoolean()
 
             return ExportOptionsObject(
                 exportST,
                 exportSTCrossView,
                 export4V,
                 export4VST,
-                exportDisparityMaps
+                exportDisparityMaps,
+                exportSplitViews
             )
         }
-        fun getSelectedExportOptionsArray(app: Application): Array<Int> {
-            val eoo = getSelectedExportOptionsObjectForApp(app)
-            return arrayOf(
-                // 0
-                eoo.EXPORT_ST.toInt(),
-                // 1
-                eoo.EXPORT_ST_CROSSVIEW.toInt(),
-                // 2
-                eoo.EXPORT_4V.toInt(),
-                // 3
-                eoo.EXPORT_4V_ST.toInt(),
-                // 4
-                eoo.EXPORT_DISPARITY_MAPS.toInt()
-            )
-        }
+//        fun getSelectedExportOptionsArray(app: Application): Array<Int> {
+//            val eoo = getSelectedExportOptionsObjectForApp(app)
+//            return arrayOf(
+//                // 0
+//                eoo.EXPORT_ST.toInt(),
+//                // 1
+//                eoo.EXPORT_ST_CROSSVIEW.toInt(),
+//                // 2
+//                eoo.EXPORT_4V.toInt(),
+//                // 3
+//                eoo.EXPORT_4V_ST.toInt(),
+//                // 4
+//                eoo.EXPORT_DISPARITY_MAPS.toInt()
+//            )
+//        }
     }
 }
